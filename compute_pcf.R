@@ -6,6 +6,8 @@ library(purrr)
 library(dplyr)
 library(spatstat.geom)
 library(spatstat.explore)
+library(tidyverse)
+library(zoo)
 
 ## Lookup table to convert file names to dates
 month_lookup <- c(JAN = 1, FEB = 2, MAR = 3, APR = 4,
@@ -19,7 +21,9 @@ parse_label_to_date <- function(data_label, month_lookup) {
 }
 
 ## Compute g_inhom(r)
-compute_pcf <- function(lek_polygon, lek_points_sf, r_vals, r_min = 1.2, correction = "translate") {
+compute_pcf <- function(lek_polygon, lek_points_sf, r_vals,
+                        r_min = 1.2, correction = "translate") {
+  
   # Define observation window
   W <- as.owin(st_geometry(lek_polygon))
   
@@ -50,15 +54,20 @@ root_dir <- "/Users/vivekhsridhar/Library/Mobile Documents/com~apple~CloudDocs/D
 setwd(root_dir)
 
 ## Lek configuration table
-lek_configs <- tibble(lek_id   = c("Velavadar_LEK1", "Velavadar_LEK2", "TalChhapar_TC"),
-  location = c("Velavadar", "Velavadar", "TalChhapar"), suffix   = c("LEK1", "LEK2", "TC"),
-  shp_file = c("Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp", "TalChhapar_Area.shp"))
+lek_configs <- tibble(
+  lek_id   = c("Velavadar_LEK1", "Velavadar_LEK2", "TalChhapar_TC"),
+  location = c("Velavadar", "Velavadar", "TalChhapar"),
+  suffix   = c("LEK1", "LEK2", "TC"),
+  shp_file = c("Velavadar_Lek1_Area.shp",
+               "Velavadar_Lek2_Area.shp",
+               "TalChhapar_Area.shp")
+)
 
 ## Comparability controls
-scale_mode <- "global"   # global reference across all leks
-r_max_mult <- 4          # r_max = r_max_mult * reference_median_nn
-n_r <- 240               # number of r points in the curve (common across files)
-r_min <- 1.2             # drop tiny-r behaviour (body length of a blackbuck)
+scale_mode <- "global"
+r_max_mult <- 4
+n_r <- 240
+r_min <- 1.2
 correction <- "translate"
 
 ## Output folder
@@ -66,20 +75,31 @@ dir.create("derived_metrics", showWarnings = FALSE)
 
 ## Build master table of all files across all leks
 files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
+  
   cfg <- lek_configs[i, ]
   
-  data_dirs <- list.dirs(file.path(root_dir, cfg$location), recursive = FALSE, full.names = TRUE)
+  data_dirs <- list.dirs(file.path(root_dir, cfg$location),
+                         recursive = FALSE, full.names = TRUE)
   data_dirs <- data_dirs[grepl("_COORDINATES$", basename(data_dirs))]
   
   map_dfr(data_dirs, function(d) {
+    
     data_label <- sub("_COORDINATES$", "", basename(d))
-    csv_path <- list.files(d, pattern = paste0("_", cfg$suffix, "\\.csv$"), full.names = TRUE)
+    csv_path <- list.files(d,
+                           pattern = paste0("_", cfg$suffix, "\\.csv$"),
+                           full.names = TRUE)
     
     if (length(csv_path) == 0) return(NULL)
     
-    tibble(lek_id = cfg$lek_id, location = cfg$location, suffix = cfg$suffix, shp_file = cfg$shp_file, 
-           data_label = data_label, date = parse_label_to_date(data_label, month_lookup), 
-           csv_path = csv_path[1])
+    tibble(
+      lek_id = cfg$lek_id,
+      location = cfg$location,
+      suffix = cfg$suffix,
+      shp_file = cfg$shp_file,
+      data_label = data_label,
+      date = parse_label_to_date(data_label, month_lookup),
+      csv_path = csv_path[1]
+    )
   })
 }) %>% arrange(lek_id, date)
 
@@ -92,7 +112,10 @@ nn_pass <- map_dfr(seq_len(nrow(files_tbl)), function(i) {
   
   row <- files_tbl[i, ]
   
-  lek_polygon <- st_read(file.path(root_dir, row$location, row$shp_file), quiet = TRUE) |> st_transform(32643) |> st_zm(drop = TRUE)
+  lek_polygon <- st_read(
+    file.path(root_dir, row$location, row$shp_file),
+    quiet = TRUE
+  ) |> st_transform(32643) |> st_zm(drop = TRUE)
   
   df <- read.csv(row$csv_path)
   pts_sf <- st_as_sf(df, coords = c("pos_x", "pos_y"), crs = 32643)
@@ -122,35 +145,125 @@ summary_list <- list()
 for (i in seq_len(nrow(files_tbl))) {
   
   row <- files_tbl[i, ]
-  message("Processing ", row$lek_id, " : ", row$data_label, " (", i, "/", nrow(files_tbl), ")")
+  message("Processing ", row$lek_id, " : ", row$data_label,
+          " (", i, "/", nrow(files_tbl), ")")
   
-  lek_polygon <- st_read(file.path(root_dir, row$location, row$shp_file), quiet = TRUE) |> st_transform(32643) |> st_zm(drop = TRUE)
+  lek_polygon <- st_read(
+    file.path(root_dir, row$location, row$shp_file),
+    quiet = TRUE
+  ) |> st_transform(32643) |> st_zm(drop = TRUE)
   
   df <- read.csv(row$csv_path)
   lek_points <- st_as_sf(df, coords = c("pos_x", "pos_y"), crs = 32643)
   
-  res <- compute_pcf(lek_polygon = lek_polygon, lek_points_sf = lek_points, 
-                     r_vals = r_vals, r_min = r_min, correction = correction)
+  res <- compute_pcf(
+    lek_polygon = lek_polygon,
+    lek_points_sf = lek_points,
+    r_vals = r_vals,
+    r_min = r_min,
+    correction = correction
+  )
   
-  res <- compute_pcf(lek_polygon = lek_polygon, lek_points_sf = lek_points, 
-                     r_vals = r_vals, correction = correction)
+  curve_list[[i]] <- res$g_df %>%
+    mutate(
+      lek_id = row$lek_id,
+      data_label = row$data_label,
+      date = row$date,
+      r_max_used = r_max,
+      ref_median_nn = ref_median_nn
+    )
   
-  # Save full curve
-  curve_list[[i]] <- res$g_df %>% mutate(lek_id = row$lek_id, data_label = row$data_label,
-                                         date = row$date, r_max_used = r_max, ref_median_nn = ref_median_nn)
-  
-  # Save per-date summary
-  summary_list[[i]] <- tibble(lek_id = row$lek_id, data_label = row$data_label, date = row$date, 
-                              n_points = nrow(df), nn_median = res$nn_median, bw_sigma = as.numeric(res$sigma),
-                              ref_median_nn = ref_median_nn, r_max_used = r_max)
+  summary_list[[i]] <- tibble(
+    lek_id = row$lek_id,
+    data_label = row$data_label,
+    date = row$date,
+    n_points = nrow(df),
+    nn_median = res$nn_median,
+    bw_sigma = as.numeric(res$sigma),
+    ref_median_nn = ref_median_nn,
+    r_max_used = r_max
+  )
 }
 
 pcf_curves  <- bind_rows(curve_list)
 pcf_summary <- bind_rows(summary_list)
 
 ## Write outputs
-write.csv(pcf_curves, file.path("derived_metrics", "pcf_curve_ALL.csv"), row.names = FALSE)
-write.csv(pcf_summary, file.path("derived_metrics", "pcf_summary_ALL.csv"), row.names = FALSE) 
+write.csv(pcf_curves, "derived_metrics/pcf_curve_ALL.csv", row.names = FALSE)
+write.csv(pcf_summary, "derived_metrics/pcf_summary_ALL.csv", row.names = FALSE)
 
 message("Saved curves to:  derived_metrics/pcf_curve_ALL.csv")
 message("Saved summary to: derived_metrics/pcf_summary_ALL.csv")
+
+## Peak detection parameters
+lower_nnd_mult <- 0.8
+smooth_k <- 5
+min_prominence <- 0.02
+min_sep_mult <- 0.5
+
+## Peak detection function
+detect_peaks <- function(r, g, med_nnd) {
+  
+  keep <- r >= lower_nnd_mult * med_nnd
+  r <- r[keep]
+  g <- g[keep]
+  
+  if (length(r) < 10) return(NULL)
+  
+  g_s <- zoo::rollmean(g, k = smooth_k, fill = NA, align = "center")
+  
+  is_peak <- g_s > lag(g_s) & g_s > lead(g_s)
+  peak_idx <- which(is_peak)
+  
+  if (length(peak_idx) == 0) return(NULL)
+  
+  peaks <- tibble(
+    r_peak = r[peak_idx],
+    g_peak = g[peak_idx]
+  )
+  
+  peaks <- peaks %>%
+    arrange(r_peak) %>%
+    filter(c(TRUE, diff(r_peak) >= min_sep_mult * med_nnd))
+  
+  local_bg <- mean(g, na.rm = TRUE)
+  
+  peaks <- peaks %>%
+    mutate(peak_strength = g_peak - local_bg) %>%
+    filter(peak_strength >= min_prominence)
+  
+  if (nrow(peaks) == 0) return(NULL)
+  
+  peaks
+}
+
+## Apply peak detection to all lek × date PCFs
+peak_table <- pcf_curves %>%
+  left_join(
+    pcf_summary %>% select(lek_id, date, nn_median),
+    by = c("lek_id", "date")
+  ) %>%
+  group_by(lek_id, date) %>%
+  group_modify(~{
+    
+    df <- .x %>% arrange(r)
+    med_nnd <- unique(df$nn_median)
+    
+    if (length(med_nnd) != 1 || is.na(med_nnd)) return(tibble())
+    
+    peaks <- detect_peaks(df$r, df$g, med_nnd)
+    
+    if (is.null(peaks)) return(tibble())
+    
+    peaks
+  }) %>%
+  ungroup()
+
+## Save peak table
+write.csv(
+  peak_table,
+  "derived_metrics/pcf_peak_table_ALL.csv",
+  row.names = FALSE
+)
+
+message("Saved peak table to: derived_metrics/pcf_peak_table_ALL.csv")
