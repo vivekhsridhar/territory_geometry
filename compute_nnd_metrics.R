@@ -25,7 +25,7 @@ compute_nnd <- function(lek_polygon, lek_points) {
   
   nn <- nndist(X)
   
-  tibble(nnd_mean = mean(nn), nnd_sd = sd(nn), nnd_count = length(nn))
+  tibble(nnd_mean = mean(nn), nnd_sd = sd(nn), nnd_count = length(nn), nnd_cv = sd(nn)/mean(nn))
 }
 
 ## Root code and data directory

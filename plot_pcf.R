@@ -46,49 +46,26 @@ pcf_mean <- pcf_all %>%
 
 ## Plot mean PCF curve with individual curves
 p_pcf_mean <- ggplot() +
-  geom_line(
-    data = pcf_all,
-    aes(x = r, y = g, group = interaction(lek_id, date), colour = lek_id),
-    linewidth = 0.4, alpha = 0.3
-  ) +
-  geom_line(
-    data = pcf_mean,
-    aes(x = r, y = g_mean, colour = lek_id),
-    linewidth = 1
-  ) +
-  scale_colour_manual(values = line_cols) +
-  theme_classic(base_size = 13) +
-  theme(
-    legend.title = element_blank(),
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10))
-  ) +
+  geom_line(data = pcf_all, aes(x = r, y = g, group = interaction(lek_id, date), colour = lek_id), linewidth = 0.4, alpha = 0.3) +
+  geom_line(data = pcf_mean, aes(x = r, y = g_mean, colour = lek_id), linewidth = 1) +
+  scale_colour_manual(values = line_cols) + theme_classic(base_size = 13) +
+  theme(legend.title = element_blank(),
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
   labs(x = "Distance r (m)", y = expression(g[inhom](r)))
 
 save_pub_fig(p_pcf_mean, "fig_pcf_mean_with_ribbon")
 
 ## Plot individual PCF curves with detected peaks overlaid
 p_pcf_peaks <- ggplot() +
-  geom_line(
-    data = pcf_all,
-    aes(x = r, y = g, group = interaction(lek_id, date), colour = lek_id),
-    linewidth = 0.6, alpha = 0.35
-  ) +
-  geom_point(
-    data = peaks,
-    aes(x = r_peak, y = g_peak, colour = lek_id),
-    size = 2.2, alpha = 0.9
-  ) +
+  geom_line(data = pcf_all, aes(x = r, y = g, group = interaction(lek_id, date), colour = lek_id), linewidth = 0.6, alpha = 0.35) +
+  geom_point(data = peaks, aes(x = r_peak, y = g_peak, colour = lek_id), size = 2.2, alpha = 0.9) +
   facet_wrap(~ lek_id, ncol = 1, scales = "free_y") +
   scale_colour_manual(values = line_cols) +
   theme_classic(base_size = 13) +
-  theme(
-    legend.position = "none",
-    strip.background = element_blank(),
-    strip.text = element_text(face = "bold"),
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10))
-  ) +
+  theme(legend.position = "none", strip.background = element_blank(), strip.text = element_text(face = "bold"),
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
   labs(x = "Distance r (m)", y = expression(g[inhom](r)))
 
 save_pub_fig(p_pcf_peaks, "fig_pcf_curves_with_detected_peaks", width = 7, height = 9)
@@ -98,18 +75,13 @@ peak_counts <- peaks %>%
   count(lek_id, date, name = "n_peaks")
 
 p_npeaks <- ggplot(peak_counts, aes(x = lek_id, y = n_peaks)) +
-  geom_boxplot(aes(fill = lek_id), width = 0.55,
-               outlier.shape = NA, linewidth = 0.8, colour = "black") +
-  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0,
-              size = 2.4, alpha = 0.9) +
-  scale_fill_manual(values = fill_cols) +
-  scale_colour_manual(values = point_cols) +
+  geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +
+  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0, size = 2.4, alpha = 0.9) +
+  scale_fill_manual(values = fill_cols) + scale_colour_manual(values = point_cols) +
   theme_classic(base_size = 13) +
-  theme(
-    legend.position = "none",
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10))
-  ) +
+  theme(legend.position = "none",
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
   labs(x = "Lek", y = "Number of meso-scale PCF peaks")
 
 save_pub_fig(p_npeaks, "fig_pcf_n_peaks_by_lek")
@@ -120,36 +92,52 @@ first_peaks <- peaks %>%
   summarise(r_first_peak = min(r_peak), .groups = "drop")
 
 p_rpeak <- ggplot(first_peaks, aes(x = lek_id, y = r_first_peak)) +
-  geom_boxplot(aes(fill = lek_id), width = 0.55,
-               outlier.shape = NA, linewidth = 0.8, colour = "black") +
-  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0,
-              size = 2.4, alpha = 0.9) +
-  scale_fill_manual(values = fill_cols) +
-  scale_colour_manual(values = point_cols) +
+  geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +
+  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0, size = 2.4, alpha = 0.9) +
+  scale_fill_manual(values = fill_cols) + scale_colour_manual(values = point_cols) +
   theme_classic(base_size = 13) +
-  theme(
-    legend.position = "none",
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10))
-  ) +
+  theme(legend.position = "none",
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
   labs(x = "Lek", y = "Distance to first meso-scale PCF peak (m)")
 
 save_pub_fig(p_rpeak, "fig_pcf_first_peak_distance_by_lek")
 
-## Peak strength
-p_strength <- ggplot(peaks, aes(x = lek_id, y = peak_strength)) +
-  geom_boxplot(aes(fill = lek_id), width = 0.55,
-               outlier.shape = NA, linewidth = 0.8, colour = "black") +
-  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0,
-              size = 2.4, alpha = 0.9) +
+## Peak prominence
+p_prominence <- ggplot(peaks, aes(x = lek_id, y = peak_prominence)) +
+  geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +
+  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0, size = 2.4, alpha = 0.9) +
   scale_fill_manual(values = fill_cols) +
-  scale_colour_manual(values = point_cols) +
-  theme_classic(base_size = 13) +
-  theme(
-    legend.position = "none",
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10))
-  ) +
-  labs(x = "Lek", y = "PCF peak strength (above local background)")
+  scale_colour_manual(values = point_cols) + theme_classic(base_size = 13) +
+  theme(legend.position = "none",
+        axis.title.x = element_text(margin = margin(t = 10)), 
+        axis.title.y = element_text(margin = margin(r = 10))) +
+  labs(x = "Lek", y = "PCF peak prominence")
 
-save_pub_fig(p_strength, "fig_pcf_peak_strength_by_lek")
+save_pub_fig(p_prominence, "fig_pcf_peak_prominence_by_lek")
+
+## Peak curvature
+p_curvature <- ggplot(peaks, aes(x = lek_id, y = peak_curvature)) +
+  geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +
+  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0, size = 2.4, alpha = 0.9) +
+  scale_fill_manual(values = fill_cols) +
+  scale_colour_manual(values = point_cols) + theme_classic(base_size = 13) +
+  theme(legend.position = "none",
+        axis.title.x = element_text(margin = margin(t = 10)), 
+        axis.title.y = element_text(margin = margin(r = 10))) +
+  labs(x = "Lek", y = "PCF peak curvature")
+
+save_pub_fig(p_curvature, "fig_pcf_peak_curvature_by_lek")
+
+## Peak width
+p_width <- ggplot(peaks, aes(x = lek_id, y = peak_width)) +
+  geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +
+  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0, size = 2.4, alpha = 0.9) +
+  scale_fill_manual(values = fill_cols) +
+  scale_colour_manual(values = point_cols) + theme_classic(base_size = 13) +
+  theme(legend.position = "none",
+        axis.title.x = element_text(margin = margin(t = 10)), 
+        axis.title.y = element_text(margin = margin(r = 10))) +
+  labs(x = "Lek", y = "PCF peak width")
+
+save_pub_fig(p_width, "fig_pcf_peak_width_by_lek")

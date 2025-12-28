@@ -43,7 +43,7 @@ p_mean <- ggplot(nnd_all, aes(x = lek_id, y = nnd_mean)) +
 
 save_pub_fig(p_mean, "fig_nnd_mean_by_lek")
 
-# SD of NND (key regularity metric)
+# SD of NND
 p_sd <- ggplot(nnd_all, aes(x = lek_id, y = nnd_sd)) +
   geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +
   geom_jitter(aes(colour = lek_id), width = 0.10, size = 2.4, alpha = 0.9) +
@@ -55,6 +55,19 @@ p_sd <- ggplot(nnd_all, aes(x = lek_id, y = nnd_sd)) +
   labs(x = "Lek", y = "Standard deviation of nearest-neighbour distance (m)")
 
 save_pub_fig(p_sd, "fig_nnd_sd_by_lek")
+
+# CV of NND
+p_count <- ggplot(nnd_all, aes(x = lek_id, y = nnd_cv)) +
+  geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +
+  geom_jitter(aes(colour = lek_id), width = 0.10, size = 2.4, alpha = 0.9) +
+  scale_fill_manual(values = fill_cols) + scale_colour_manual(values = point_cols) +
+  theme_classic(base_size = 13) +
+  theme(legend.position = "none",
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
+  labs(x = "Lek", y = "Number of territories")
+
+save_pub_fig(p_count, "fig_nnd_cv_by_lek")
 
 # NND count
 p_count <- ggplot(nnd_all, aes(x = lek_id, y = nnd_count)) +
