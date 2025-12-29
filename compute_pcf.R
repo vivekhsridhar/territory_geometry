@@ -67,7 +67,7 @@ lek_configs <- tibble(
 scale_mode <- "global"
 r_max_mult <- 4
 n_r <- 240
-r_min <- 1.2
+r_min <- 5.0
 correction <- "translate"
 
 ## Output folder
@@ -216,7 +216,6 @@ detect_peaks <- function(r, g, med_nnd) {
       return(tibble(
         r_peak = r_peak,
         g_peak = g_peak,
-        peak_height_above_mean = peak_height_above_mean,
         peak_prominence = NA_real_,
         peak_curvature = NA_real_,
         peak_width = NA_real_
@@ -233,7 +232,7 @@ detect_peaks <- function(r, g, med_nnd) {
     if (idx <= 1 || idx >= length(g)) {
       peak_curvature <- NA_real_
     } else {
-      gpp <- (g[idx + 1] - 2 * g[idx] + g[idx - 1]) / (dr^2)
+      gpp <- (g_s[idx + 1] - 2 * g_s[idx] + g_s[idx - 1]) / (dr^2)
       peak_curvature <- -gpp
     }
     
@@ -260,7 +259,6 @@ detect_peaks <- function(r, g, med_nnd) {
     tibble(
       r_peak = r_peak,
       g_peak = g_peak,
-      peak_height_above_mean = peak_height_above_mean,
       peak_prominence = peak_prominence,
       peak_curvature = peak_curvature,
       peak_width = peak_width

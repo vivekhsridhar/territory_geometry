@@ -103,19 +103,6 @@ p_rpeak <- ggplot(first_peaks, aes(x = lek_id, y = r_first_peak)) +
 
 save_pub_fig(p_rpeak, "fig_pcf_first_peak_distance_by_lek")
 
-## Peak prominence
-p_prominence <- ggplot(peaks, aes(x = lek_id, y = peak_prominence)) +
-  geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +
-  geom_jitter(aes(colour = lek_id), width = 0.10, height = 0, size = 2.4, alpha = 0.9) +
-  scale_fill_manual(values = fill_cols) +
-  scale_colour_manual(values = point_cols) + theme_classic(base_size = 13) +
-  theme(legend.position = "none",
-        axis.title.x = element_text(margin = margin(t = 10)), 
-        axis.title.y = element_text(margin = margin(r = 10))) +
-  labs(x = "Lek", y = "PCF peak prominence")
-
-save_pub_fig(p_prominence, "fig_pcf_peak_prominence_by_lek")
-
 ## Peak curvature
 p_curvature <- ggplot(peaks, aes(x = lek_id, y = peak_curvature)) +
   geom_boxplot(aes(fill = lek_id), width = 0.55, outlier.shape = NA, linewidth = 0.8, colour = "black") +

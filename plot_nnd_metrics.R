@@ -65,7 +65,7 @@ p_count <- ggplot(nnd_all, aes(x = lek_id, y = nnd_cv)) +
   theme(legend.position = "none",
         axis.title.x = element_text(margin = margin(t = 10)),
         axis.title.y = element_text(margin = margin(r = 10))) +
-  labs(x = "Lek", y = "Number of territories")
+  labs(x = "Lek", y = "CV of nearest-neighbour distance")
 
 save_pub_fig(p_count, "fig_nnd_cv_by_lek")
 
