@@ -70,7 +70,7 @@ if (nrow(files_tbl) < 2) {
   stop("Not enough data for stability analysis.")
 }
 
-## Helper: compute intensity centroid and mode (ROBUST)
+## Helper: compute intensity centroid and mode
 compute_intensity_features <- function(lek_polygon, lek_points_sf) {
   
   W <- as.owin(st_geometry(lek_polygon))
@@ -110,7 +110,7 @@ compute_intensity_features <- function(lek_polygon, lek_points_sf) {
   bind_cols(centroid, mode)
 }
 
-## Helper: cross-year nearest-neighbour distances (FULLY ROBUST)
+## Helper: cross-year nearest-neighbour distances
 cross_year_nn <- function(pts_now, pts_prev, W) {
   
   X_now  <- ppp(pts_now[,1],  pts_now[,2],  window = W)
@@ -152,49 +152,26 @@ stability_tbl <- map_dfr(unique(files_tbl$lek_id), function(lk) {
     row_prev <- sub_tbl[i - 1, ]
     row_now  <- sub_tbl[i, ]
     
-    lek_polygon <- st_read(
-      file.path(root_dir, row_now$location, row_now$shp_file),
-      quiet = TRUE
-    ) |> st_transform(32643) |> st_zm(drop = TRUE)
+    lek_polygon <- st_read(file.path(root_dir, row_now$location, row_now$shp_file), quiet = TRUE) |> st_transform(32643) |> st_zm(drop = TRUE)
     
-    pts_prev <- read.csv(row_prev$csv_path) |>
-      st_as_sf(coords = c("pos_x", "pos_y"), crs = 32643)
-    
-    pts_now <- read.csv(row_now$csv_path) |>
-      st_as_sf(coords = c("pos_x", "pos_y"), crs = 32643)
+    pts_prev <- read.csv(row_prev$csv_path) |> st_as_sf(coords = c("pos_x", "pos_y"), crs = 32643)
+    pts_now <- read.csv(row_now$csv_path) |> st_as_sf(coords = c("pos_x", "pos_y"), crs = 32643)
     
     feat_prev <- compute_intensity_features(lek_polygon, pts_prev)
     feat_now  <- compute_intensity_features(lek_polygon, pts_now)
     
-    centroid_shift <- sqrt((feat_now$cx - feat_prev$cx)^2 +
-                             (feat_now$cy - feat_prev$cy)^2)
-    
-    mode_shift <- sqrt((feat_now$mx - feat_prev$mx)^2 +
-                         (feat_now$my - feat_prev$my)^2)
+    centroid_shift <- sqrt((feat_now$cx - feat_prev$cx)^2 + (feat_now$cy - feat_prev$cy)^2)
+    mode_shift <- sqrt((feat_now$mx - feat_prev$mx)^2 + (feat_now$my - feat_prev$my)^2)
     
     W <- as.owin(st_geometry(lek_polygon))
     
-    nn_cross <- cross_year_nn(
-      st_coordinates(pts_now),
-      st_coordinates(pts_prev),
-      W
-    )
+    nn_cross <- cross_year_nn(st_coordinates(pts_now), st_coordinates(pts_prev), W)
     
-    tibble(
-      lek_id = lk,
-      date_prev = row_prev$date,
-      date_now  = row_now$date,
-      centroid_shift = centroid_shift,
-      mode_shift = mode_shift
-    ) %>% bind_cols(nn_cross)
+    tibble(lek_id = lk, date_prev = row_prev$date, date_now  = row_now$date,
+           centroid_shift = centroid_shift, mode_shift = mode_shift) %>% bind_cols(nn_cross)
   })
 })
 
 ## Save output
-write.csv(
-  stability_tbl,
-  "derived_metrics/stability_ALL.csv",
-  row.names = FALSE
-)
-
+write.csv(stability_tbl, "derived_metrics/stability_ALL.csv", row.names = FALSE)
 message("Saved stability metrics to: derived_metrics/stability_ALL.csv")

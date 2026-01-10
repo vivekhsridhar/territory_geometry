@@ -58,9 +58,7 @@ lek_configs <- tibble(
   lek_id   = c("Velavadar_LEK1", "Velavadar_LEK2", "TalChhapar_TC"),
   location = c("Velavadar", "Velavadar", "TalChhapar"),
   suffix   = c("LEK1", "LEK2", "TC"),
-  shp_file = c("Velavadar_Lek1_Area.shp",
-               "Velavadar_Lek2_Area.shp",
-               "TalChhapar_Area.shp")
+  shp_file = c("Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp", "TalChhapar_Area.shp")
 )
 
 ## Comparability controls
@@ -189,10 +187,6 @@ detect_peaks <- function(r, g, med_nnd) {
   ) %>%
     arrange(r_peak) %>%
     filter(c(TRUE, diff(r_peak) >= min_sep_mult * med_nnd))
-  
-  # Old baseline measure (optional to keep)
-  local_bg <- mean(g, na.rm = TRUE)
-  peaks <- peaks %>% mutate(peak_height_above_mean = g_peak - local_bg)
   
   # Helper: choose a local window (in r units) around each peak
   # Use something proportional to spacing so it scales across patterns

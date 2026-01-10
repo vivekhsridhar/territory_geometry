@@ -59,10 +59,6 @@ files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
   })
 }) %>% arrange(lek_id, date)
 
-if (nrow(files_tbl) == 0) {
-  stop("No CSV files found across leks.")
-}
-
 ## Compute NND metrics for all leks and all dates
 nnd_results <- map_dfr(seq_len(nrow(files_tbl)), function(i) {
   row <- files_tbl[i, ]

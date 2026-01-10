@@ -103,48 +103,36 @@ save_pub_fig(p_cross_nn, "fig_stability_crossyear_nn")
 
 ## ---- Time series: cross-year NN distance ----
 
-p_nn_ts <- ggplot(stab,
-                  aes(x = date_now,
-                      y = nn_cross_median,
-                      colour = lek_id,
-                      group = lek_id)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.6) +
-  scale_colour_manual(values = point_cols) +
+p_nn_ts <- ggplot(stab, aes(x = date_now, y = nn_cross_median, colour = lek_id, group = lek_id)) +
+  geom_line(linewidth = 1) + geom_point(size = 2.6) + scale_colour_manual(values = point_cols) +
   theme_classic(base_size = 13) +
-  theme(
-    legend.position = "top",
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10))
-  ) +
-  labs(
-    x = "Year",
-    y = "Cross-year nearest-neighbour distance (m)",
-    colour = "Lek"
-  )
+  theme(legend.position = "top",
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
+  labs(x = "Year", y = "Cross-year nearest-neighbour distance (m)", colour = "Lek")
 
 save_pub_fig(p_nn_ts, "fig_stability_crossyear_nn_timeseries", width = 8, height = 4.8)
 
 ## ---- Time series: centroid displacement ----
 
-p_centroid_ts <- ggplot(stab,
-                        aes(x = date_now,
-                            y = centroid_shift,
-                            colour = lek_id,
-                            group = lek_id)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.6) +
-  scale_colour_manual(values = point_cols) +
+p_centroid_ts <- ggplot(stab, aes(x = date_now, y = centroid_shift, colour = lek_id, group = lek_id)) +
+  geom_line(linewidth = 1) + geom_point(size = 2.6) + scale_colour_manual(values = point_cols) +
   theme_classic(base_size = 13) +
-  theme(
-    legend.position = "top",
-    axis.title.x = element_text(margin = margin(t = 10)),
-    axis.title.y = element_text(margin = margin(r = 10))
-  ) +
-  labs(
-    x = "Year",
-    y = "Intensity centroid displacement (m)",
-    colour = "Lek"
-  )
+  theme(legend.position = "top",
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
+  labs(x = "Year", y = "Intensity centroid displacement (m)", colour = "Lek")
 
 save_pub_fig(p_centroid_ts, "fig_stability_centroid_timeseries", width = 8, height = 4.8)
+
+## ---- Time series: mode displacement ----
+
+p_modes_ts <- ggplot(stab, aes(x = date_now, y = mode_shift, colour = lek_id, group = lek_id)) +
+  geom_line(linewidth = 1) + geom_point(size = 2.6) + scale_colour_manual(values = point_cols) +
+  theme_classic(base_size = 13) +
+  theme(legend.position = "top",
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
+  labs(x = "Year", y = "Intensity centroid displacement (m)", colour = "Lek")
+
+save_pub_fig(p_modes_ts, "fig_stability_mode_timeseries", width = 8, height = 4.8)
