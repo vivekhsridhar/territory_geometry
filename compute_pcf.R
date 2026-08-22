@@ -44,7 +44,7 @@ min_n <- 20
 sigma_s <- 2
 weight_cap_q <- 0.95
 correction <- "translate"
-min_neff <- 40
+min_neff <- 35
 
 ## Output folder
 out_dir <- file.path(script_dir, "processed_data")
@@ -96,8 +96,6 @@ compute_neff <- function(X, lambda_used, r_vals, pcf_h) {
     # Pair contribution, up to constants common to all pairs at target_r
     contribution <- K * E * W_lambda
     w <- contribution[upper & is.finite(contribution) & contribution > 0]
-
-    if (length(w) == 0 || sum(w) <= 0) return(NA_real_)
 
     p <- w / sum(w)
     1 / sum(p^2)
@@ -179,7 +177,7 @@ for (i in seq_len(nrow(files_tbl))) {
   
   curve_list[[i]] <- res$g_df %>%
     mutate(lek_id = row$lek_id, data_label = row$data_label, date = row$date,
-           n_points = n_pts, nn_median = res$nn_median)
+           n_points = n_pts, nn_median = res$nn_median, row$N_eff)
   
   summary_list[[i]] <- tibble(lek_id = row$lek_id, data_label = row$data_label,
                               date = row$date, n_points = n_pts, nn_median = res$nn_median, 
@@ -209,10 +207,10 @@ min_prominence <- 0.02
 min_sep_mult <- 0.1
 
 ## Peak detection function
-detect_peaks <- function(r, g, med_nnd) {
+detect_peaks <- function(s, g, med_nnd) {
   
-  # Rescale distance by this curve's median nearest-neighbour distance
-  s <- r / med_nnd
+  # Rescale distance to go back to metres
+  r <- s * med_nnd
   
   # Apply lower cutoff in rescaled units
   keep <- s >= lower_nnd_mult
@@ -220,15 +218,12 @@ detect_peaks <- function(r, g, med_nnd) {
   r <- r[keep]
   g <- g[keep]
   
-  if (length(s) < 10) return(NULL)
-  
   # Smooth g for robust peak detection and estimation of peak properties
   g_s <- zoo::rollmean(g, k = smooth_k, fill = NA, align = "center")
   
   # Local maxima on the smoothed curve
   is_peak <- g_s > dplyr::lag(g_s) & g_s > dplyr::lead(g_s)
   peak_idx <- which(is_peak)
-  if (length(peak_idx) == 0) return(NULL)
   
   # Candidate peaks. Peak height is taken from the smoothed curve.
   peaks <- tibble(idx = peak_idx,
@@ -241,7 +236,6 @@ detect_peaks <- function(r, g, med_nnd) {
   
   # Step size on rescaled axis for second-derivative curvature
   ds <- median(diff(s), na.rm = TRUE)
-  if (!is.finite(ds) || ds <= 0) ds <- diff(range(s)) / (length(s) - 1)
   
   # Estimate prominence and curvature from the smoothed curve
   peaks <- purrr::pmap_dfr(peaks, function(idx, s_peak, r_peak, g_peak) {
@@ -249,27 +243,18 @@ detect_peaks <- function(r, g, med_nnd) {
     left_limit_s  <- s_peak - win_half_width
     right_limit_s <- s_peak + win_half_width
     
-    left_idx  <- which(s >= left_limit_s & s < s_peak & is.finite(g_s))
-    right_idx <- which(s > s_peak & s <= right_limit_s & is.finite(g_s))
+    left_idx  <- which(s >= left_limit_s & s < s_peak)
+    right_idx <- which(s > s_peak & s <= right_limit_s)
     
     # A peak requires support on both sides to define prominence
-    if (length(left_idx) == 0 || length(right_idx) == 0) {
-      peak_prominence <- NA_real_
-    } else {
-      left_min  <- min(g_s[left_idx], na.rm = TRUE)
-      right_min <- min(g_s[right_idx], na.rm = TRUE)
-      baseline  <- max(left_min, right_min)
-      peak_prominence <- g_peak - baseline
-    }
+    left_min  <- min(g_s[left_idx], na.rm = TRUE)
+    right_min <- min(g_s[right_idx], na.rm = TRUE)
+    baseline  <- max(left_min, right_min)
+    peak_prominence <- g_peak - baseline
     
     # Curvature: negative second derivative of smoothed g(s)
-    if (idx <= 1 || idx >= length(g_s) ||
-        !all(is.finite(g_s[c(idx - 1, idx, idx + 1)]))) {
-      peak_curvature <- NA_real_
-    } else {
-      gpp <- (g_s[idx + 1] - 2 * g_s[idx] + g_s[idx - 1]) / (ds^2)
-      peak_curvature <- -gpp
-    }
+    gpp <- (g_s[idx + 1] - 2 * g_s[idx] + g_s[idx - 1]) / (ds^2)
+    peak_curvature <- -gpp
     
     tibble(idx = idx,
            s_peak = s_peak,
@@ -306,17 +291,7 @@ peak_table <- pcf_curves %>%
     med_nnd <- unique(df$nn_median)
     n_pts   <- unique(df$n_points)
     
-    peaks <- detect_peaks(df$r, df$g, med_nnd)
-    
-    if (is.null(peaks) || nrow(peaks) == 0) {
-      return(tibble(s_peak = NA_real_,
-                    r_peak = NA_real_,
-                    g_peak = NA_real_,
-                    peak_prominence = NA_real_,
-                    peak_curvature = NA_real_,
-                    n_peaks = 0L,
-                    n_points = n_pts))
-    }
+    peaks <- detect_peaks(df$s, df$g, med_nnd)
     
     # Attach Neff at the detected peak location, then filter by support.
     # detect_peaks() itself is unchanged.
