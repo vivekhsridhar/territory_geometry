@@ -36,10 +36,17 @@ lek_configs <- tibble(
   shp_file = c("Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp", "TalChhapar_Area.shp")
 )
 
-## PCF controls (each lek x date curve is evaluated from r=0 to r=4*median NND for that point pattern)
-r_max_mult <- 4
-n_r <- 240
+## PCF controls (each lek x date)
+n_r <- 200
+s_max <- 4
+pcf_hs <- 0.3
+min_n <- 30
+sigma_s <- 2
+weight_cap_q <- 0.95
 correction <- "translate"
+
+## Minimum effective pair support required for a detected peak
+min_neff <- 10
 
 ## Output folder
 out_dir <- file.path(script_dir, "processed_data")
@@ -71,9 +78,40 @@ files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
 }) %>% arrange(lek_id, date)
 
 ## HELPER FUNCTIONS
+## Effective number of unordered point pairs contributing to each PCF value
+compute_neff <- function(X, lambda_used, r_vals, pcf_h) {
+
+  # Pairwise distances, translation edge weights, and inverse-intensity weights
+  D <- pairdist(X)
+  E <- edge.Trans(X)
+  W_lambda <- outer(1 / lambda_used, 1 / lambda_used, "*")
+
+  # Keep each unordered pair once
+  upper <- upper.tri(D)
+
+  purrr::map_dbl(r_vals, function(target_r) {
+
+    # Epanechnikov kernel used by pcfinhom()
+    u <- (target_r - D) / pcf_h
+    K <- ifelse(abs(u) <= 1,
+                (3 / (4 * pcf_h)) * (1 - u^2),
+                0)
+
+    # Pair contribution, up to constants common to all pairs at target_r
+    contribution <- K * E * W_lambda
+    w <- contribution[upper & is.finite(contribution) & contribution > 0]
+
+    if (length(w) == 0 || sum(w) <= 0) return(NA_real_)
+
+    p <- w / sum(w)
+    1 / sum(p^2)
+  })
+}
+
 ## Compute g_inhom(r) per lek x date
-compute_pcf <- function(lek_polygon, lek_points_sf, r_max_mult=4,
-                        n_r=240, correction = "translate") {
+compute_pcf <- function(lek_polygon, lek_points_sf, n_r = 200, s_max = 4,
+                        pcf_hs = 0.2, sigma_s = 2, weight_cap_q = 0.95, 
+                        correction = "translate") {
   
   # Define observation window
   W <- as.owin(st_geometry(lek_polygon))
@@ -88,20 +126,43 @@ compute_pcf <- function(lek_polygon, lek_points_sf, r_max_mult=4,
   nn_median <- median(nn)
   
   # Define r-range from the curve's own median NND
-  r_max <- r_max_mult * nn_median
-  r_vals <- seq(0, r_max, length.out = n_r)
+  s_vals <- seq(0, s_max, length.out = n_r)
+  r_vals <- s_vals * nn_median
   
   # Intensity estimate (inhomogeneous)
-  sigma <- bw.ppl(X)
-  lambda_hat <- density.ppp(X, sigma = sigma, edge = TRUE, at = "pixels")
+  sigma <- sigma_s * nn_median
+  lambda_hat <- density.ppp(X, sigma = sigma, edge = TRUE, at = "points", leaveoneout = TRUE)
+  
+  # Cap lambda weighting (this prevents extreme effects of outliers on the pcf curves)
+  inv_lambda <- 1 / lambda_hat
+  weight_cap <- quantile(inv_lambda, weight_cap_q)
+  inv_lambda_used <- pmin(inv_lambda, weight_cap)
+  lambda_used <- 1 / inv_lambda_used
   
   # Inhomogeneous pair correlation
-  g <- pcfinhom(X, lambda = lambda_hat, r = r_vals, correction = correction)
+  pcf_h <- pcf_hs * nn_median
+  g <- pcfinhom(X, lambda = lambda_used, r = r_vals, h = pcf_h, correction = correction)
   
-  # Extract translation-corrected PCF
-  g_df <- tibble(r = g$r, g = g$trans)
+  # Extract translation- and weight-corrected PCF
+  g_df <- tibble(r = g$r, s = g$r / nn_median, g = g$trans)
+
+  # Effective pair support on exactly the same r-grid as the PCF
+  N_eff <- compute_neff(X = X,
+                        lambda_used = lambda_used,
+                        r_vals = g$r,
+                        pcf_h = pcf_h)
+
+  g_df <- g_df %>%
+    mutate(N_eff = N_eff)
   
-  list(g_df = g_df, nn_median = nn_median, sigma = sigma, r_max = r_max)
+  weight_df <- tibble(x = X$x, y = X$y, lambda_hat = lambda_hat,
+                      inv_lambda = inv_lambda, inv_lambda_used = inv_lambda_used, 
+                      capped = inv_lambda > weight_cap)
+  
+  list(g_df = g_df, weight_df = weight_df, nn_median = nn_median, 
+       sigma = sigma, sigma_s = sigma / nn_median,
+       pcf_h = pcf_h, pcf_hs = pcf_hs, weight_cap = weight_cap,
+       n_capped = sum(inv_lambda > weight_cap))
 }
 
 ## MAIN
@@ -121,31 +182,23 @@ for (i in seq_len(nrow(files_tbl))) {
   n_pts <- nrow(df)
   lek_points <- st_as_sf(df, coords = c("pos_x", "pos_y"), crs = 32643)
   
-  res <- compute_pcf(lek_polygon = lek_polygon,
-                     lek_points_sf = lek_points,
-                     r_max_mult = r_max_mult,
-                     n_r = n_r,
-                     correction = correction)
+  res <- compute_pcf(lek_polygon = lek_polygon, lek_points_sf = lek_points,
+                     n_r = n_r, pcf_hs = pcf_hs, sigma_s = sigma_s, correction = correction)
   
   curve_list[[i]] <- res$g_df %>%
-    mutate(lek_id = row$lek_id,
-           data_label = row$data_label,
-           date = row$date,
-           n_points = n_pts,
-           nn_median = res$nn_median,
-           r_max_used = res$r_max)
+    mutate(lek_id = row$lek_id, data_label = row$data_label, date = row$date,
+           n_points = n_pts, nn_median = res$nn_median)
   
-  summary_list[[i]] <- tibble(lek_id = row$lek_id,
-                              data_label = row$data_label,
-                              date = row$date,
-                              n_points = n_pts,
-                              nn_median = res$nn_median,
-                              bw_sigma = as.numeric(res$sigma),
-                              r_max_used = res$r_max)
+  summary_list[[i]] <- tibble(lek_id = row$lek_id, data_label = row$data_label,
+                              date = row$date, n_points = n_pts, nn_median = res$nn_median, 
+                              bw_sigma = as.numeric(res$sigma), bw_sigma_s = as.numeric(res$sigma_s), 
+                              pcf_hs = res$pcf_hs, pcf_h = res$pcf_h)
 }
 
 pcf_curves <- bind_rows(curve_list)
 pcf_summary <- bind_rows(summary_list)
+pcf_curves <- pcf_curves[pcf_curves$n_points >= min_n,]
+pcf_summary <- pcf_summary[pcf_summary$n_points >= min_n,]
 
 ## Write outputs
 curves_out_file <- file.path(out_dir, "pcf_curve_ALL.csv")
@@ -276,6 +329,23 @@ peak_table <- pcf_curves %>%
                     n_points = n_pts))
     }
     
+    # Attach Neff at the detected peak location, then filter by support.
+    # detect_peaks() itself is unchanged.
+    peaks <- peaks %>%
+      mutate(N_eff = df$N_eff[match(r_peak, df$r)]) %>%
+      filter(is.finite(N_eff), N_eff >= min_neff) %>%
+      select(-N_eff)
+
+    if (nrow(peaks) == 0) {
+      return(tibble(s_peak = NA_real_,
+                    r_peak = NA_real_,
+                    g_peak = NA_real_,
+                    peak_prominence = NA_real_,
+                    peak_curvature = NA_real_,
+                    n_peaks = 0L,
+                    n_points = n_pts))
+    }
+
     peaks %>% mutate(n_peaks = n(), n_points = n_pts)
   }) %>% ungroup()
 
