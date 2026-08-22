@@ -40,11 +40,11 @@ lek_configs <- tibble(
 n_r <- 200
 s_max <- 4
 pcf_hs <- 0.3
-min_n <- 20
-sigma_s <- 2
+min_n <- 30
+sigma_s <- 2.5
 weight_cap_q <- 0.95
 correction <- "translate"
-min_neff <- 35
+min_neff <- 40
 
 ## Output folder
 out_dir <- file.path(script_dir, "processed_data")
@@ -201,10 +201,9 @@ message("Saved summary to: ", summary_out_file)
 
 ## PEAK DETECTION
 ## Peak detection parameters
-lower_nnd_mult <- 0.8
-smooth_k <- 5
+lower_nnd_bound_s <- 0.5
 min_prominence <- 0.02
-min_sep_mult <- 0.1
+min_peak_sep_s <- 0.5
 
 ## Peak detection function
 detect_peaks <- function(s, g, med_nnd) {
@@ -213,23 +212,20 @@ detect_peaks <- function(s, g, med_nnd) {
   r <- s * med_nnd
   
   # Apply lower cutoff in rescaled units
-  keep <- s >= lower_nnd_mult
+  keep <- s >= lower_nnd_bound_s
   s <- s[keep]
   r <- r[keep]
   g <- g[keep]
   
-  # Smooth g for robust peak detection and estimation of peak properties
-  g_s <- zoo::rollmean(g, k = smooth_k, fill = NA, align = "center")
-  
   # Local maxima on the smoothed curve
-  is_peak <- g_s > dplyr::lag(g_s) & g_s > dplyr::lead(g_s)
+  is_peak <- g > dplyr::lag(g) & g > dplyr::lead(g)
   peak_idx <- which(is_peak)
   
   # Candidate peaks. Peak height is taken from the smoothed curve.
   peaks <- tibble(idx = peak_idx,
                   s_peak = s[peak_idx],
                   r_peak = r[peak_idx],
-                  g_peak = g_s[peak_idx])
+                  g_peak = g[peak_idx])
   
   # Prominence window width in rescaled units
   win_half_width <- 0.75
@@ -247,13 +243,13 @@ detect_peaks <- function(s, g, med_nnd) {
     right_idx <- which(s > s_peak & s <= right_limit_s)
     
     # A peak requires support on both sides to define prominence
-    left_min  <- min(g_s[left_idx], na.rm = TRUE)
-    right_min <- min(g_s[right_idx], na.rm = TRUE)
+    left_min  <- min(g[left_idx], na.rm = TRUE)
+    right_min <- min(g[right_idx], na.rm = TRUE)
     baseline  <- max(left_min, right_min)
     peak_prominence <- g_peak - baseline
     
     # Curvature: negative second derivative of smoothed g(s)
-    gpp <- (g_s[idx + 1] - 2 * g_s[idx] + g_s[idx - 1]) / (ds^2)
+    gpp <- (g[idx + 1] - 2 * g[idx] + g[idx - 1]) / (ds^2)
     peak_curvature <- -gpp
     
     tibble(idx = idx,
@@ -269,7 +265,7 @@ detect_peaks <- function(s, g, med_nnd) {
   
   # Iteratively enforce minimum peak separation.
   # At each step, retain the most prominent remaining peak and remove
-  # all other candidates within min_sep_mult on the rescaled distance axis.
+  # all other candidates within min_peak_sep_s on the rescaled distance axis.
   remaining <- peaks %>% arrange(desc(peak_prominence), desc(g_peak))
   selected <- list()
   
@@ -277,7 +273,7 @@ detect_peaks <- function(s, g, med_nnd) {
     chosen <- remaining[1, ]
     selected[[length(selected) + 1]] <- chosen
     
-    remaining <- remaining %>% filter(abs(s_peak - chosen$s_peak) >= min_sep_mult)
+    remaining <- remaining %>% filter(abs(s_peak - chosen$s_peak) >= min_peak_sep_s)
   }
   
   bind_rows(selected) %>% arrange(s_peak) %>% select(-idx)
