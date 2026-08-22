@@ -40,13 +40,11 @@ lek_configs <- tibble(
 n_r <- 200
 s_max <- 4
 pcf_hs <- 0.3
-min_n <- 30
+min_n <- 20
 sigma_s <- 2
 weight_cap_q <- 0.95
 correction <- "translate"
-
-## Minimum effective pair support required for a detected peak
-min_neff <- 10
+min_neff <- 40
 
 ## Output folder
 out_dir <- file.path(script_dir, "processed_data")
@@ -93,9 +91,7 @@ compute_neff <- function(X, lambda_used, r_vals, pcf_h) {
 
     # Epanechnikov kernel used by pcfinhom()
     u <- (target_r - D) / pcf_h
-    K <- ifelse(abs(u) <= 1,
-                (3 / (4 * pcf_h)) * (1 - u^2),
-                0)
+    K <- ifelse(abs(u) <= 1, (3 / (4 * pcf_h)) * (1 - u^2), 0)
 
     # Pair contribution, up to constants common to all pairs at target_r
     contribution <- K * E * W_lambda
@@ -147,13 +143,9 @@ compute_pcf <- function(lek_polygon, lek_points_sf, n_r = 200, s_max = 4,
   g_df <- tibble(r = g$r, s = g$r / nn_median, g = g$trans)
 
   # Effective pair support on exactly the same r-grid as the PCF
-  N_eff <- compute_neff(X = X,
-                        lambda_used = lambda_used,
-                        r_vals = g$r,
-                        pcf_h = pcf_h)
+  N_eff <- compute_neff(X = X, lambda_used = lambda_used, r_vals = g$r, pcf_h = pcf_h)
 
-  g_df <- g_df %>%
-    mutate(N_eff = N_eff)
+  g_df <- g_df %>% mutate(N_eff = N_eff)
   
   weight_df <- tibble(x = X$x, y = X$y, lambda_hat = lambda_hat,
                       inv_lambda = inv_lambda, inv_lambda_used = inv_lambda_used, 
@@ -214,7 +206,7 @@ message("Saved summary to: ", summary_out_file)
 lower_nnd_mult <- 0.8
 smooth_k <- 5
 min_prominence <- 0.02
-min_sep_mult <- 0.5
+min_sep_mult <- 0.1
 
 ## Peak detection function
 detect_peaks <- function(r, g, med_nnd) {
@@ -300,13 +292,10 @@ detect_peaks <- function(r, g, med_nnd) {
     chosen <- remaining[1, ]
     selected[[length(selected) + 1]] <- chosen
     
-    remaining <- remaining %>%
-      filter(abs(s_peak - chosen$s_peak) >= min_sep_mult)
+    remaining <- remaining %>% filter(abs(s_peak - chosen$s_peak) >= min_sep_mult)
   }
   
-  bind_rows(selected) %>%
-    arrange(s_peak) %>%
-    select(-idx)
+  bind_rows(selected) %>% arrange(s_peak) %>% select(-idx)
 }
 
 ## Apply peak detection to all lek × date PCFs
