@@ -29,22 +29,10 @@ root_dir <- "/Users/vivekhsridhar/Library/Mobile Documents/com~apple~CloudDocs/D
 setwd(root_dir)
 
 ## Lek configuration table
-lek_configs <- tibble(
-  lek_id   = c("Velavadar_LEK1", "Velavadar_LEK2", "TalChhapar_TC"),
-  location = c("Velavadar", "Velavadar", "TalChhapar"),
-  suffix   = c("LEK1", "LEK2", "TC"),
-  shp_file = c("Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp", "TalChhapar_Area.shp")
-)
-
-## PCF controls (each lek x date)
-n_r <- 200
-s_max <- 4
-pcf_hs <- 0.3
-min_n <- 30
-sigma_s <- 2.5
-weight_cap_q <- 0.95
-correction <- "translate"
-min_neff <- 40
+lek_configs <- tibble(lek_id   = c("Velavadar_LEK1", "Velavadar_LEK2", "TalChhapar_TC"),
+                      location = c("Velavadar", "Velavadar", "TalChhapar"),
+                      suffix   = c("LEK1", "LEK2", "TC"),
+                      shp_file = c("Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp", "TalChhapar_Area.shp"))
 
 ## Output folder
 out_dir <- file.path(script_dir, "processed_data")
@@ -65,15 +53,21 @@ files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
     
     if (length(csv_path) == 0) return(NULL)
     
-    tibble(lek_id = cfg$lek_id,
-           location = cfg$location,
-           suffix = cfg$suffix, 
-           shp_file = cfg$shp_file,
-           data_label = data_label,
-           date = parse_label_to_date(data_label, month_lookup),
-           csv_path = csv_path[1])
+    tibble(lek_id = cfg$lek_id, location = cfg$location, suffix = cfg$suffix, 
+           shp_file = cfg$shp_file, data_label = data_label,
+           date = parse_label_to_date(data_label, month_lookup), csv_path = csv_path[1])
   })
 }) %>% arrange(lek_id, date)
+
+## PCF controls (each lek x date)
+n_r <- 200
+s_max <- 4
+pcf_hs <- 0.3
+min_n <- 30
+sigma_s <- 2.5
+weight_cap_q <- 0.95
+correction <- "translate"
+min_neff <- 40
 
 ## HELPER FUNCTIONS
 ## Effective number of unordered point pairs contributing to each PCF value
@@ -92,11 +86,13 @@ compute_neff <- function(X, lambda_used, r_vals, pcf_h) {
     # Epanechnikov kernel used by pcfinhom()
     u <- (target_r - D) / pcf_h
     K <- ifelse(abs(u) <= 1, (3 / (4 * pcf_h)) * (1 - u^2), 0)
-
+    
     # Pair contribution, up to constants common to all pairs at target_r
-    contribution <- K * E * W_lambda
+    contribution <- K #* E * W_lambda
     w <- contribution[upper & is.finite(contribution) & contribution > 0]
-
+    
+    if (length(w) == 0) return(0)
+    
     p <- w / sum(w)
     1 / sum(p^2)
   })
@@ -142,7 +138,7 @@ compute_pcf <- function(lek_polygon, lek_points_sf, n_r = 200, s_max = 4,
 
   # Effective pair support on exactly the same r-grid as the PCF
   N_eff <- compute_neff(X = X, lambda_used = lambda_used, r_vals = g$r, pcf_h = pcf_h)
-
+  print(sum(N_eff))
   g_df <- g_df %>% mutate(N_eff = N_eff)
   
   weight_df <- tibble(x = X$x, y = X$y, lambda_hat = lambda_hat,
