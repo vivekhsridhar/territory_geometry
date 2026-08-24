@@ -232,7 +232,7 @@ plot_crossyear_core_overlap <- function(kde_grid, lek_polygon, pts_prev, pts_cur
   p <- ggplot() +
     geom_tile(data = core_df, aes(x = x, y = y), width = kde_grid$xstep, height = kde_grid$ystep, fill = "#C49102", alpha = 0.4) +
     geom_sf(data = pts_curr, colour = "black", size = 1.2, alpha = 0.6) +
-    geom_sf(data = pts_curr_in_core, colour = "#B5542D", size = 1.2) +
+    geom_sf(data = pts_curr_in_core, colour = "#3FA7A3", size = 1.2) +
     coord_sf(xlim = plot_limits$xlim, ylim = plot_limits$ylim, expand = FALSE) + theme_classic(base_size = 11) +
     theme(plot.title = element_text(face = "bold"),
           axis.text = element_text(size = 8),

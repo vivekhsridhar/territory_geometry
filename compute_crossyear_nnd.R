@@ -48,7 +48,7 @@ lek_configs <- tibble(lek_id   = c("Tal Chhapar", "Velavadar Lek 1", "Velavadar 
                       suffix   = c("TC", "LEK1", "LEK2"),
                       shp_file = c("TalChhapar_Area.shp", "Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp"))
 
-plot_crossyear = TRUE
+plot_crossyear = FALSE
 
 ## Build master table of all files across all leks
 files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
@@ -82,7 +82,7 @@ kde_dimyx <- 512
 min_points_kde <- 10
 
 ## Null simulation settings
-n_sims <- 10
+n_sims <- 1000
 set.seed(123)
 
 ## MAIN
@@ -94,32 +94,6 @@ lek_polygons <- map(seq_len(nrow(lek_configs)), function(i) {
 })
 
 names(lek_polygons) <- lek_configs$lek_id
-
-## Compute a single representative KDE bandwidth per lek
-sigma_fixed_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
-  # Extract config for this lek and get all files ordered by date
-  cfg <- lek_configs %>% slice(i)
-  files_lek <- files_tbl %>% filter(lek_id == cfg$lek_id) %>% arrange(date)
-  
-  lek_polygon <- lek_polygons[[cfg$lek_id]]
-  
-  # Loop over dates and estimate the bandwidth value for each time point
-  sigma_tbl <- map_dfr(seq_len(nrow(files_lek)), function(j) {
-    
-    row_j <- files_lek[j, ]
-    
-    # Read the point coordinates and only keep ones inside the lek polygon
-    pts_sf <- read.csv(row_j$csv_path) %>% st_as_sf(coords = c("pos_x", "pos_y"), crs = 32643)
-    pts_sf <- clip_points_to_polygon(pts_sf, lek_polygon)
-    
-    # Store the number of points and the KDE bandwidth 
-    tibble(date = row_j$date, n_points = nrow(pts_sf),
-           sigma_year = if (nrow(pts_sf) >= min_points_kde) get_kde_sigma(pts_sf, lek_polygon) else NA_real_)
-  })
-  
-  # Take the median bandwidth across years as the fixed value for each lek
-  tibble(lek_id = cfg$lek_id, sigma_fixed = median(sigma_tbl$sigma_year, na.rm = TRUE))
-})
 
 ## Read and store all points (lek id x year)
 pts_by_lek_year <- map(seq_len(nrow(files_tbl)), function(i) {
@@ -170,7 +144,6 @@ for (lek in names(files_by_lek)) {
   
   # Retreive the lek polygon and the KDE bandwidth for this lek
   lek_polygon <- lek_polygons[[lek]]
-  sigma_fixed <- as.numeric(sigma_fixed_tbl[sigma_fixed_tbl$lek_id == lek,'sigma_fixed'])
   
   # Loop over consecutive dates
   for (i in 2:nrow(files_lek)) {
@@ -185,8 +158,10 @@ for (lek in names(files_by_lek)) {
     pts_prev <- pts_by_lek_year[[paste(row_prev$lek_id, row_prev$date, sep = "__")]]
     pts_curr <- pts_by_lek_year[[paste(row_curr$lek_id, row_curr$date, sep = "__")]]
     
+    sigma_prev <- get_kde_sigma(pts_prev, lek_polygon)
+      
     # Compute KDE grid from t-1
-    kde_prev <- make_kde_grid(pts_sf = pts_prev, lek_polygon = lek_polygon, sigma = sigma_fixed, core_prob = core_prob, dimyx = kde_dimyx)
+    kde_prev <- make_kde_grid(pts_sf = pts_prev, lek_polygon = lek_polygon, sigma = sigma_prev, core_prob = core_prob, dimyx = kde_dimyx)
     
     # Keep only current-year points inside previous-year KDE core
     pts_curr_in_core <- subset_points_to_kde_core(pts_curr, kde_prev)
@@ -203,7 +178,6 @@ for (lek in names(files_by_lek)) {
     
     # Compute nearest-neighbour distance from current to previous points
     obs_nnd <- nnd(pts_curr_in_core, pts_prev)
-    dist_from_centre <- distance_to_kde_mode(pts_curr_in_core, kde_prev, crs_use = st_crs(pts_prev))
     
     # Simulate transformed previous-year points and compute NNDs
     sim_out <- simulate_transform_crossyear_nnd(prev_pts = pts_prev, curr_pts = pts_curr_in_core, n_sims = n_sims)
@@ -214,40 +188,16 @@ for (lek in names(files_by_lek)) {
     obs_mean <- mean(obs_nnd)
     obs_median <- median(obs_nnd)
     
-    # Qunatiles of simulated transformed mean NNDs
-    rand_mean_transform_q025 <- quantile(sim_tbl$mean_nnd_transform_rand, 0.025, na.rm = TRUE)
-    rand_mean_transform_q25  <- quantile(sim_tbl$mean_nnd_transform_rand, 0.25, na.rm = TRUE)
-    rand_mean_transform_q50  <- quantile(sim_tbl$mean_nnd_transform_rand, 0.50, na.rm = TRUE)
-    rand_mean_transform_q75  <- quantile(sim_tbl$mean_nnd_transform_rand, 0.75, na.rm = TRUE)
-    rand_mean_transform_q975 <- quantile(sim_tbl$mean_nnd_transform_rand, 0.975, na.rm = TRUE)
-
-    # Quantiles of simulated transformed median NNDs
-    rand_median_transform_q025 <- quantile(sim_tbl$median_nnd_transform_rand, 0.025, na.rm = TRUE)
-    rand_median_transform_q25  <- quantile(sim_tbl$median_nnd_transform_rand, 0.25, na.rm = TRUE)
-    rand_median_transform_q50  <- quantile(sim_tbl$median_nnd_transform_rand, 0.50, na.rm = TRUE)
-    rand_median_transform_q75  <- quantile(sim_tbl$median_nnd_transform_rand, 0.75, na.rm = TRUE)
-    rand_median_transform_q975 <- quantile(sim_tbl$median_nnd_transform_rand, 0.975, na.rm = TRUE)
-
     # Store summary statistics for this time step
     summary_list[[length(summary_list) + 1]] <- tibble(lek_id = lek, date_prev = date_prev, date_curr = date_curr,
                                                        n_prev = nrow(pts_prev), n_curr = nrow(pts_curr), 
                                                        n_curr_in_prev_core = nrow(pts_curr_in_core),
-                                                       obs_mean_nnd = obs_mean, obs_median_nnd = obs_median,
-                                                       rand_mean_transform_nnd_q025 = as.numeric(rand_mean_transform_q025),
-                                                       rand_mean_transform_nnd_q25 = as.numeric(rand_mean_transform_q25),
-                                                       rand_mean_transform_nnd_q50 = as.numeric(rand_mean_transform_q50),
-                                                       rand_mean_transform_nnd_q75 = as.numeric(rand_mean_transform_q75),
-                                                       rand_mean_transform_nnd_q975 = as.numeric(rand_mean_transform_q975),
-                                                       rand_median_transform_nnd_q025 = as.numeric(rand_median_transform_q025),
-                                                       rand_median_transform_nnd_q25 = as.numeric(rand_median_transform_q25),
-                                                       rand_median_transform_nnd_q50 = as.numeric(rand_median_transform_q50),
-                                                       rand_median_transform_nnd_q75 = as.numeric(rand_median_transform_q75),
-                                                       rand_median_transform_nnd_q975 = as.numeric(rand_median_transform_q975))
+                                                       obs_mean_nnd = obs_mean, obs_median_nnd = obs_median)
     
     # Store point-level NNDs for current points within the KDE core from previous year's points
     pointwise_list[[length(pointwise_list) + 1]] <- pts_curr_in_core %>%
       mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr, point_id = seq_along(obs_nnd),
-             nnd_to_prev = obs_nnd, dist_from_centre = dist_from_centre) %>% st_drop_geometry()
+             nnd_to_prev = obs_nnd) %>% st_drop_geometry()
     
     # Store simulation output for the same transition
     sim_list[[length(sim_list) + 1]] <- sim_tbl %>%
@@ -255,8 +205,7 @@ for (lek in names(files_by_lek)) {
 
     # Store point-level simulation output for the same transition
     pointwise_randomisation_list[[length(pointwise_randomisation_list) + 1]] <- sim_pointwise_tbl %>%
-      mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr,
-             dist_from_centre = dist_from_centre[point_id])
+      mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr)
   }
 }
 
@@ -276,7 +225,7 @@ simulation_tbl <- sim_tbl_all %>%
             median_crossyear_nnd_transform_rand = median_nnd_transform_rand)
 
 pointwise_randomisation_tbl <- pointwise_randomisation_tbl %>%
-  transmute(lek_id, date_prev, date_now = date_curr, sim, point_id, nnd_to_prev, dist_from_centre)
+  transmute(lek_id, date_prev, date_now = date_curr, sim, point_id, nnd_to_prev)
 
 crossyear_nnd_tbl <- simulation_tbl %>%
   left_join(summary_tbl, by = c("lek_id", "date_prev", "date_now")) %>%
