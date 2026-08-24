@@ -1,10 +1,15 @@
 rm(list = ls())
 
-## Load libraries
+## Set working directory to location of this script
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+## Load libraries and custom functions
 library(sf)
 library(purrr)
 library(spatstat.geom)
 library(dplyr)
+
+source('spatial_analysis_functions.R')
 
 ## SETUP / HOUSEKEEPING
 ## Get directory where this script lives
@@ -52,18 +57,6 @@ files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
            csv_path = csv_path[1])
   })
 }) %>% arrange(lek_id, date)
-
-## HELPER FUNCTIONS
-## Compute NND metrics
-compute_nnd <- function(lek_polygon, lek_points) {
-  W <- as.owin(st_geometry(lek_polygon))
-  pts <- st_coordinates(lek_points)
-  X <- ppp(pts[,1], pts[,2], window = W)
-  
-  nn <- nndist(X)
-  
-  tibble(nnd_mean = mean(nn), nnd_median = median(nn), nnd_sd = sd(nn), nnd_count = length(nn), nnd_cv = sd(nn)/mean(nn))
-}
 
 ## MAIN
 ## Compute NND metrics for all leks and all dates

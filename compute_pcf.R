@@ -1,6 +1,9 @@
 rm(list = ls())
 
-## Load libraries
+## Set working directory to location of this script
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+## Load libraries and custom functions
 library(sf)
 library(purrr)
 library(dplyr)
@@ -8,6 +11,8 @@ library(spatstat.geom)
 library(spatstat.explore)
 library(tidyverse)
 library(zoo)
+
+source('spatial_analysis_functions.R')
 
 ## SETUP / HOUSEKEEPING
 ## Get directory where this script lives
@@ -69,88 +74,6 @@ weight_cap_q <- 0.95
 correction <- "translate"
 min_neff <- 40
 
-## HELPER FUNCTIONS
-## Effective number of unordered point pairs contributing to each PCF value
-compute_neff <- function(X, lambda_used, r_vals, pcf_h) {
-
-  # Pairwise distances, translation edge weights, and inverse-intensity weights
-  D <- pairdist(X)
-  E <- edge.Trans(X)
-  W_lambda <- outer(1 / lambda_used, 1 / lambda_used, "*")
-
-  # Keep each unordered pair once
-  upper <- upper.tri(D)
-
-  purrr::map_dbl(r_vals, function(target_r) {
-
-    # Epanechnikov kernel used by pcfinhom()
-    u <- (target_r - D) / pcf_h
-    K <- ifelse(abs(u) <= 1, (3 / (4 * pcf_h)) * (1 - u^2), 0)
-    
-    # Pair contribution, up to constants common to all pairs at target_r
-    contribution <- K #* E * W_lambda
-    w <- contribution[upper & is.finite(contribution) & contribution > 0]
-    
-    if (length(w) == 0) return(0)
-    
-    p <- w / sum(w)
-    1 / sum(p^2)
-  })
-}
-
-## Compute g_inhom(r) per lek x date
-compute_pcf <- function(lek_polygon, lek_points_sf, n_r = 200, s_max = 4,
-                        pcf_hs = 0.2, sigma_s = 2, weight_cap_q = 0.95, 
-                        correction = "translate") {
-  
-  # Define observation window
-  W <- as.owin(st_geometry(lek_polygon))
-  
-  # Create point pattern object
-  pts <- st_coordinates(lek_points_sf)
-  X <- ppp(pts[, 1], pts[, 2], window = W)
-  stopifnot(all(inside.owin(X$x, X$y, W)))
-  
-  # Median nearest-neighbour distance for this point pattern
-  nn <- nndist(X)
-  nn_median <- median(nn)
-  
-  # Define r-range from the curve's own median NND
-  s_vals <- seq(0, s_max, length.out = n_r)
-  r_vals <- s_vals * nn_median
-  
-  # Intensity estimate (inhomogeneous)
-  sigma <- sigma_s * nn_median
-  lambda_hat <- density.ppp(X, sigma = sigma, edge = TRUE, at = "points", leaveoneout = TRUE)
-  
-  # Cap lambda weighting (this prevents extreme effects of outliers on the pcf curves)
-  inv_lambda <- 1 / lambda_hat
-  weight_cap <- quantile(inv_lambda, weight_cap_q)
-  inv_lambda_used <- pmin(inv_lambda, weight_cap)
-  lambda_used <- 1 / inv_lambda_used
-  
-  # Inhomogeneous pair correlation
-  pcf_h <- pcf_hs * nn_median
-  g <- pcfinhom(X, lambda = lambda_used, r = r_vals, h = pcf_h, correction = correction)
-  
-  # Extract translation- and weight-corrected PCF
-  g_df <- tibble(r = g$r, s = g$r / nn_median, g = g$trans)
-
-  # Effective pair support on exactly the same r-grid as the PCF
-  N_eff <- compute_neff(X = X, lambda_used = lambda_used, r_vals = g$r, pcf_h = pcf_h)
-  print(sum(N_eff))
-  g_df <- g_df %>% mutate(N_eff = N_eff)
-  
-  weight_df <- tibble(x = X$x, y = X$y, lambda_hat = lambda_hat,
-                      inv_lambda = inv_lambda, inv_lambda_used = inv_lambda_used, 
-                      capped = inv_lambda > weight_cap)
-  
-  list(g_df = g_df, weight_df = weight_df, nn_median = nn_median, 
-       sigma = sigma, sigma_s = sigma / nn_median,
-       pcf_h = pcf_h, pcf_hs = pcf_hs, weight_cap = weight_cap,
-       n_capped = sum(inv_lambda > weight_cap))
-}
-
 ## MAIN
 ## Compute PCFs for all leks and all dates
 curve_list <- list()
@@ -195,85 +118,11 @@ write.csv(pcf_summary, summary_out_file, row.names = FALSE)
 message("Saved curves to: ", curves_out_file)
 message("Saved summary to: ", summary_out_file)
 
-## PEAK DETECTION
+## Perform peak detection on computed PCF curves
 ## Peak detection parameters
 lower_nnd_bound_s <- 0.5
 min_prominence <- 0.02
 min_peak_sep_s <- 0.5
-
-## Peak detection function
-detect_peaks <- function(s, g, med_nnd) {
-  
-  # Rescale distance to go back to metres
-  r <- s * med_nnd
-  
-  # Apply lower cutoff in rescaled units
-  keep <- s >= lower_nnd_bound_s
-  s <- s[keep]
-  r <- r[keep]
-  g <- g[keep]
-  
-  # Local maxima on the smoothed curve
-  is_peak <- g > dplyr::lag(g) & g > dplyr::lead(g)
-  peak_idx <- which(is_peak)
-  
-  # Candidate peaks. Peak height is taken from the smoothed curve.
-  peaks <- tibble(idx = peak_idx,
-                  s_peak = s[peak_idx],
-                  r_peak = r[peak_idx],
-                  g_peak = g[peak_idx])
-  
-  # Prominence window width in rescaled units
-  win_half_width <- 0.75
-  
-  # Step size on rescaled axis for second-derivative curvature
-  ds <- median(diff(s), na.rm = TRUE)
-  
-  # Estimate prominence and curvature from the smoothed curve
-  peaks <- purrr::pmap_dfr(peaks, function(idx, s_peak, r_peak, g_peak) {
-    
-    left_limit_s  <- s_peak - win_half_width
-    right_limit_s <- s_peak + win_half_width
-    
-    left_idx  <- which(s >= left_limit_s & s < s_peak)
-    right_idx <- which(s > s_peak & s <= right_limit_s)
-    
-    # A peak requires support on both sides to define prominence
-    left_min  <- min(g[left_idx], na.rm = TRUE)
-    right_min <- min(g[right_idx], na.rm = TRUE)
-    baseline  <- max(left_min, right_min)
-    peak_prominence <- g_peak - baseline
-    
-    # Curvature: negative second derivative of smoothed g(s)
-    gpp <- (g[idx + 1] - 2 * g[idx] + g[idx - 1]) / (ds^2)
-    peak_curvature <- -gpp
-    
-    tibble(idx = idx,
-           s_peak = s_peak,
-           r_peak = r_peak,
-           g_peak = g_peak,
-           peak_prominence = peak_prominence,
-           peak_curvature = peak_curvature)
-  }) %>%
-    filter(!is.na(peak_prominence), peak_prominence >= min_prominence)
-  
-  if (nrow(peaks) == 0) return(NULL)
-  
-  # Iteratively enforce minimum peak separation.
-  # At each step, retain the most prominent remaining peak and remove
-  # all other candidates within min_peak_sep_s on the rescaled distance axis.
-  remaining <- peaks %>% arrange(desc(peak_prominence), desc(g_peak))
-  selected <- list()
-  
-  while (nrow(remaining) > 0) {
-    chosen <- remaining[1, ]
-    selected[[length(selected) + 1]] <- chosen
-    
-    remaining <- remaining %>% filter(abs(s_peak - chosen$s_peak) >= min_peak_sep_s)
-  }
-  
-  bind_rows(selected) %>% arrange(s_peak) %>% select(-idx)
-}
 
 ## Apply peak detection to all lek × date PCFs
 peak_table <- pcf_curves %>%

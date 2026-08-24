@@ -1,6 +1,9 @@
 rm(list = ls())
 
-## Load libraries
+## Set working directory to location of this script
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+## Load libraries and custom functions
 library(sf)
 library(rstudioapi)
 library(purrr)
@@ -10,6 +13,8 @@ library(tibble)
 library(ggplot2)
 library(spatstat.geom)
 library(spatstat.explore)
+
+source('spatial_analysis_functions.R')
 
 ## SETUP / HOUSEKEEPING
 ## Get directory where this script lives
@@ -38,12 +43,10 @@ plot_dir <- file.path(script_dir, "output")
 dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
 
 ## Lek configurations
-lek_configs <- tibble(
-  lek_id   = c("Tal Chhapar", "Velavadar Lek 1", "Velavadar Lek 2"),
-  location = c("TalChhapar", "Velavadar", "Velavadar"),
-  suffix   = c("TC", "LEK1", "LEK2"),
-  shp_file = c("TalChhapar_Area.shp", "Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp")
-)
+lek_configs <- tibble(lek_id   = c("Tal Chhapar", "Velavadar Lek 1", "Velavadar Lek 2"),
+                      location = c("TalChhapar", "Velavadar", "Velavadar"),
+                      suffix   = c("TC", "LEK1", "LEK2"),
+                      shp_file = c("TalChhapar_Area.shp", "Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp"))
 
 plot_crossyear = FALSE
 
@@ -81,197 +84,6 @@ min_points_kde <- 10
 ## Null simulation settings
 n_sims <- 1000
 set.seed(123)
-
-## HELPER FUNCTIONS
-## Consider points within the lek polygon only
-clip_points_to_polygon <- function(pts_sf, polygon_sf) {
-  inside <- lengths(st_within(pts_sf, polygon_sf)) > 0
-  pts_sf[inside, ]
-}
-
-## Compute a KDE of the points and make a mask that defines the core region
-make_kde_grid <- function(pts_sf, lek_polygon, sigma, core_prob = 0.75, dimyx = 256) {
-  
-  # Convert the polygon to a spatstat window and extract point coordinates
-  W <- as.owin(st_geometry(lek_polygon))
-  xy <- st_coordinates(pts_sf)
-  
-  # Build the point pattern and estimate the KDE on a grid
-  X <- ppp(x = xy[, 1], y = xy[, 2], window = W)
-  dens <- density.ppp(X, sigma = sigma, edge = TRUE, dimyx = dimyx)
-  
-  # Build the point pattern and estimate the KDE on a grid
-  kde_df <- as.data.frame(dens)
-  names(kde_df) <- c("x", "y", "z")
-  
-  # Compute KDE mass and normalize so the KDE values so the mass sums up to 1
-  cell_area <- dens$xstep * dens$ystep
-  total_mass <- sum(kde_df$z, na.rm = TRUE) * cell_area
-  kde_df <- kde_df %>% mutate(p = z / total_mass)
-  
-  # Sort KDE grid cell densities
-  vals <- kde_df$p[is.finite(kde_df$p)]
-  vals <- sort(vals, decreasing = TRUE)
-  
-  # Find the density threshold needed to capture the chosen core probability mass
-  mass_cum <- cumsum(vals) * cell_area
-  idx <- which(mass_cum >= core_prob)[1]
-  contour_level <- vals[idx]
-  
-  # Mark grid cells as inside or outside the KDE core mask
-  kde_df <- kde_df %>% mutate(core_prob = core_prob, sigma_used = sigma, contour_level = contour_level, 
-                              in_core = is.finite(p) & (p >= contour_level))
-  
-  list(kde_df = kde_df, contour_level = contour_level, cell_area = cell_area, xstep = dens$xstep, ystep = dens$ystep)
-}
-
-## Check which points fall inside the core region (KDE mask)
-subset_points_to_kde_core <- function(pts_sf, kde_grid) {
-  
-  # Extract point coordinates and only keep points that are within the KDE core
-  pts_xy <- st_coordinates(pts_sf)
-  core_cells <- kde_grid$kde_df %>% filter(in_core) %>% select(x, y)
-  if (nrow(core_cells) == 0) return(pts_sf[0, ])
-  
-  # Match each point to nearest grid-cell centre in x and y separately
-  x_vals <- sort(unique(kde_grid$kde_df$x))
-  y_vals <- sort(unique(kde_grid$kde_df$y))
-  
-  # Get grid cell centres along each axis
-  nearest_x <- vapply(pts_xy[, 1], function(xx) x_vals[which.min(abs(x_vals - xx))], numeric(1))
-  nearest_y <- vapply(pts_xy[, 2], function(yy) y_vals[which.min(abs(y_vals - yy))], numeric(1))
-  
-  pts_key <- tibble(x = nearest_x, y = nearest_y)
-  core_key <- core_cells %>% mutate(in_core = TRUE)
-  
-  # Mark and keep points whose matched grid cell lies inside the KDE core
-  inside <- pts_key %>% left_join(core_key, by = c("x", "y")) %>%
-    mutate(in_core = ifelse(is.na(in_core), FALSE, in_core)) %>% pull(in_core)
-  
-  pts_sf[inside, ]
-}
-
-## Plot current-year point pattern against the previous-year KDE core
-plot_crossyear_core_overlap <- function(kde_grid, lek_polygon, pts_prev, pts_curr, pts_curr_in_core,
-                                        lek, date_prev, date_curr, plot_dir, plot_limits) {
-
-  # Keep only KDE grid cells that define the previous-year core
-  core_df <- kde_grid$kde_df %>% filter(in_core)
-
-  # Make a safe file name for this transition
-  safe_lek <- gsub("[^A-Za-z0-9]+", "_", lek)
-  out_file <- file.path(plot_dir, paste0("core_overlap_", safe_lek, "_",
-                                         format(as.Date(date_prev), "%Y%m"), "_to_",
-                                         format(as.Date(date_curr), "%Y%m"), ".png"))
-
-  # Plot the previous-year core, previous points, current points and points used in the computation
-  p <- ggplot() +
-    geom_tile(data = core_df, aes(x = x, y = y), width = kde_grid$xstep, height = kde_grid$ystep, fill = "#C49102", alpha = 0.4) +
-    geom_sf(data = pts_curr, colour = "black", size = 1.2, alpha = 0.6) +
-    geom_sf(data = pts_curr_in_core, colour = "#B5542D", size = 1.2) +
-    coord_sf(xlim = plot_limits$xlim, ylim = plot_limits$ylim, expand = FALSE) + theme_classic(base_size = 11) +
-    theme(plot.title = element_text(face = "bold"),
-          axis.text = element_text(size = 8),
-          axis.title = element_text(size = 10))
-
-  ggsave(out_file, p, width = 5, height = 5, dpi = 300)
-}
-
-## Compute distance of points from the KDE mode
-distance_to_kde_mode <- function(pts_sf, kde_grid, crs_use) {
-  mode_cell <- kde_grid$kde_df %>% filter(is.finite(p)) %>% slice_max(order_by = p, n = 1, with_ties = FALSE)
-  mode_pt <- st_as_sf(mode_cell, coords = c("x", "y"), crs = crs_use)
-  as.numeric(st_distance(pts_sf, mode_pt))
-}
-
-## Estimate KDE bandwidth for a given point pattern
-get_kde_sigma <- function(pts_sf, lek_polygon) {
-  
-  # Convert polygon and points to spatstat objects and create a point pattern object
-  W <- as.owin(st_geometry(lek_polygon))
-  xy <- st_coordinates(pts_sf)
-  
-  X <- ppp(x = xy[, 1], y = xy[, 2], window = W)
-  
-  # Estimate the smoothing bandwidth for the KDE
-  sigma <- bw.diggle(X, hmax = diameter(W))
-  sigma <- as.numeric(sigma)[1]
-  
-  return(sigma)
-}
-
-## Compute nearest-neighbour distance between points
-nnd <- function(from_pts, to_pts) {
-  dmat <- st_distance(from_pts, to_pts)
-  dmin <- apply(dmat, 1, min)
-  
-  as.numeric(dmin)
-}
-
-## Translate points by a fixed distance in a random direction
-translate_points_random <- function(pts_sf, shift_dist) {
-  
-  # Draw a random direction and shift all points by the same offset
-  theta <- runif(1, 0, 2 * pi)
-  dx <- shift_dist * cos(theta)
-  dy <- shift_dist * sin(theta)
-  
-  pts_xy <- st_coordinates(pts_sf)
-  pts_shift <- tibble(x = pts_xy[, 1] + dx, y = pts_xy[, 2] + dy)
-  
-  st_as_sf(pts_shift, coords = c("x", "y"), crs = st_crs(pts_sf))
-}
-
-## Rotate points by a random angle around their centroid
-rotate_points_random <- function(pts_sf, angle_max = pi / 6) {
-  
-  # Draw a random rotation angle and rotate all points around the centroid
-  theta <- runif(1, -angle_max, angle_max)
-  pts_xy <- st_coordinates(pts_sf)
-  ctr <- colMeans(pts_xy)
-  pts_ctr <- sweep(pts_xy, 2, ctr, "-")
-  
-  rot_mat <- matrix(c(cos(theta), -sin(theta), sin(theta), cos(theta)), nrow = 2, byrow = TRUE)
-  pts_rot <- pts_ctr %*% t(rot_mat)
-  pts_rot <- sweep(pts_rot, 2, ctr, "+")
-  pts_rot <- tibble(x = pts_rot[, 1], y = pts_rot[, 2])
-  
-  st_as_sf(pts_rot, coords = c("x", "y"), crs = st_crs(pts_sf))
-}
-
-## Translate and rotate points
-transform_points_random <- function(pts_sf, shift_dist, angle_max = pi / 6) {
-  pts_trans <- translate_points_random(pts_sf, shift_dist = shift_dist)
-  rotate_points_random(pts_trans, angle_max = angle_max)
-}
-
-## Simulate transformed previous-year points and compute nearest-neighbour distances
-simulate_transform_crossyear_nnd <- function(prev_pts, curr_pts, n_sims = 999) {
-
-  # Compute the shift distance as half of the median nearest-neighbour distance within the previous image
-  prev_dmat <- st_distance(prev_pts, prev_pts)
-  diag(prev_dmat) <- Inf
-  prev_nnd <- apply(prev_dmat, 1, min)
-  shift_dist <- median(as.numeric(prev_nnd)) / 2
-
-  # Repeat the translate-rotate randomisation and store point-level NNDs from each simulation
-  sim_pointwise <- map_dfr(seq_len(n_sims), function(s) {
-    prev_transform <- transform_points_random(prev_pts, shift_dist = shift_dist, angle_max = pi / 6)
-    transform_nnd <- nnd(curr_pts, prev_transform)
-
-    tibble(sim = s, point_id = seq_along(transform_nnd),
-           nnd_to_prev = transform_nnd)
-  })
-
-  # Summarise point-level NNDs from each simulation
-  sim_summary <- sim_pointwise %>%
-    group_by(sim) %>%
-    summarise(mean_nnd_transform_rand = mean(nnd_to_prev),
-              median_nnd_transform_rand = median(nnd_to_prev),
-              .groups = "drop")
-
-  list(summary = sim_summary, pointwise = sim_pointwise)
-}
 
 ## MAIN
 ## Read and store information about the polygons for each lek
