@@ -1,12 +1,17 @@
 rm(list = ls())
 
-## Load libraries
+## Set working directory to location of this script
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+## Load libraries and custom functions
 library(sf)
 library(purrr)
 library(dplyr)
 library(spatstat.geom)
 library(spatstat.explore)
 library(tidyverse)
+
+source('spatial_analysis_functions.R')
 
 ## SETUP / HOUSEKEEPING
 ## Get directory where this script lives
@@ -28,12 +33,10 @@ root_dir <- "/Users/vivekhsridhar/Library/Mobile Documents/com~apple~CloudDocs/D
 setwd(root_dir)
 
 ## Lek configuration table
-lek_configs <- tibble(
-  lek_id   = c("Velavadar_LEK1", "Velavadar_LEK2", "TalChhapar_TC"),
-  location = c("Velavadar", "Velavadar", "TalChhapar"),
-  suffix   = c("LEK1", "LEK2", "TC"),
-  shp_file = c("Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp", "TalChhapar_Area.shp")
-)
+lek_configs <- tibble(lek_id   = c("Velavadar_LEK1", "Velavadar_LEK2", "TalChhapar_TC"),
+                      location = c("Velavadar", "Velavadar", "TalChhapar"),
+                      suffix   = c("LEK1", "LEK2", "TC"),
+                      shp_file = c("Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp", "TalChhapar_Area.shp"))
 
 ## Output folder
 out_dir <- file.path(script_dir, "processed_data")
@@ -54,39 +57,11 @@ files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
     
     if (length(csv_path) == 0) return(NULL)
     
-    tibble(lek_id = cfg$lek_id,
-           location = cfg$location,
-           suffix = cfg$suffix,
-           shp_file = cfg$shp_file,
-           data_label = data_label,
-           date = parse_label_to_date(data_label, month_lookup), 
-           csv_path = csv_path[1])
+    tibble(lek_id = cfg$lek_id, location = cfg$location, suffix = cfg$suffix,
+           shp_file = cfg$shp_file, data_label = data_label,
+           date = parse_label_to_date(data_label, month_lookup), csv_path = csv_path[1])
   })
 }) %>% arrange(lek_id, date)
-
-## HELPER FUNCTIONS
-## Compute KDE intensity surface and extract the global mode
-compute_intensity_features <- function(lek_polygon, lek_points_sf) {
-  
-  # Convert points and polygons to spatstat and create a point pattern object
-  W <- as.owin(st_geometry(lek_polygon))
-  xy <- st_coordinates(lek_points_sf)
-  X <- ppp(xy[,1], xy[,2], window = W)
-  
-  # Estimate KDE bandwidth
-  sigma <- bw.ppl(X)
-  lambda_hat <- density.ppp(X, sigma = sigma, edge = TRUE, at = "pixels")
-  
-  # Extract location of maximum intensity (mode)
-  v <- lambda_hat$v
-  max_v <- max(v, na.rm = TRUE)
-  idx_all <- which(v == max_v, arr.ind = TRUE)
-  
-  idx <- idx_all[1, , drop = FALSE]
-  mode <- tibble(mx = lambda_hat$xcol[idx[2]], my = lambda_hat$yrow[idx[1]])
-  
-  return(mode)
-}
 
 ## MAIN 
 ## Compute the shift in KDE mode between consecutive dates

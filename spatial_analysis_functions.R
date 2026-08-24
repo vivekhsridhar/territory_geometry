@@ -157,13 +157,36 @@ detect_peaks <- function(s, g, med_nnd) {
   bind_rows(selected) %>% arrange(s_peak) %>% select(-idx)
 }
 
-## 5) Consider points within the lek polygon only
+## 5) Compute KDE intensity surface and extract the global mode
+compute_intensity_features <- function(lek_polygon, lek_points_sf) {
+  
+  # Convert points and polygons to spatstat and create a point pattern object
+  W <- as.owin(st_geometry(lek_polygon))
+  xy <- st_coordinates(lek_points_sf)
+  X <- ppp(xy[,1], xy[,2], window = W)
+  
+  # Estimate KDE bandwidth
+  sigma <- bw.ppl(X)
+  lambda_hat <- density.ppp(X, sigma = sigma, edge = TRUE, at = "pixels")
+  
+  # Extract location of maximum intensity (mode)
+  v <- lambda_hat$v
+  max_v <- max(v, na.rm = TRUE)
+  idx_all <- which(v == max_v, arr.ind = TRUE)
+  
+  idx <- idx_all[1, , drop = FALSE]
+  mode <- tibble(mx = lambda_hat$xcol[idx[2]], my = lambda_hat$yrow[idx[1]])
+  
+  return(mode)
+}
+
+## 6) Consider points within the lek polygon only
 clip_points_to_polygon <- function(pts_sf, polygon_sf) {
   inside <- lengths(st_within(pts_sf, polygon_sf)) > 0
   pts_sf[inside, ]
 }
 
-## 6) Compute a KDE of the points and make a mask that defines the core region
+## 7) Compute a KDE of the points and make a mask that defines the core region
 make_kde_grid <- function(pts_sf, lek_polygon, sigma, core_prob = 0.75, dimyx = 256) {
   
   # Convert the polygon to a spatstat window and extract point coordinates
@@ -189,7 +212,7 @@ make_kde_grid <- function(pts_sf, lek_polygon, sigma, core_prob = 0.75, dimyx = 
   list(kde_df = kde_df, contour_level = 1-core_prob, cell_area = cell_area, xstep = dens$xstep, ystep = dens$ystep)
 }
 
-## 7) Check which points fall inside the core region (KDE mask)
+## 8) Check which points fall inside the core region (KDE mask)
 subset_points_to_kde_core <- function(pts_sf, kde_grid) {
   
   # Extract point coordinates and only keep points that are within the KDE core
@@ -215,7 +238,7 @@ subset_points_to_kde_core <- function(pts_sf, kde_grid) {
   pts_sf[inside, ]
 }
 
-## 8) Plot current-year point pattern against the previous-year KDE core
+## 9) Plot current-year point pattern against the previous-year KDE core
 plot_crossyear_core_overlap <- function(kde_grid, lek_polygon, pts_prev, pts_curr, pts_curr_in_core,
                                         lek, date_prev, date_curr, plot_dir, plot_limits) {
   
@@ -241,14 +264,14 @@ plot_crossyear_core_overlap <- function(kde_grid, lek_polygon, pts_prev, pts_cur
   ggsave(out_file, p, width = 5, height = 5, dpi = 300)
 }
 
-## 9) Compute distance of points from the KDE mode
+## 10) Compute distance of points from the KDE mode
 distance_to_kde_mode <- function(pts_sf, kde_grid, crs_use) {
   mode_cell <- kde_grid$kde_df %>% filter(is.finite(p)) %>% slice_max(order_by = p, n = 1, with_ties = FALSE)
   mode_pt <- st_as_sf(mode_cell, coords = c("x", "y"), crs = crs_use)
   as.numeric(st_distance(pts_sf, mode_pt))
 }
 
-## 10) Estimate KDE bandwidth for a given point pattern
+## 11) Estimate KDE bandwidth for a given point pattern
 get_kde_sigma <- function(pts_sf, lek_polygon) {
   
   # Convert polygon and points to spatstat objects and create a point pattern object
@@ -264,7 +287,7 @@ get_kde_sigma <- function(pts_sf, lek_polygon) {
   return(sigma)
 }
 
-## 11) Compute nearest-neighbour distance between points
+## 12) Compute nearest-neighbour distance between points
 nnd <- function(from_pts, to_pts) {
   dmat <- st_distance(from_pts, to_pts)
   dmin <- apply(dmat, 1, min)
@@ -272,7 +295,7 @@ nnd <- function(from_pts, to_pts) {
   as.numeric(dmin)
 }
 
-## 12) Translate points by a fixed distance in a random direction
+## 13) Translate points by a fixed distance in a random direction
 translate_points_random <- function(pts_sf, shift_dist) {
   
   # Draw a random direction and shift all points by the same offset
@@ -286,7 +309,7 @@ translate_points_random <- function(pts_sf, shift_dist) {
   st_as_sf(pts_shift, coords = c("x", "y"), crs = st_crs(pts_sf))
 }
 
-## 13) Rotate points by a random angle around their centroid
+## 14) Rotate points by a random angle around their centroid
 rotate_points_random <- function(pts_sf, angle_max = pi / 6) {
   
   # Draw a random rotation angle and rotate all points around the centroid
@@ -303,13 +326,13 @@ rotate_points_random <- function(pts_sf, angle_max = pi / 6) {
   st_as_sf(pts_rot, coords = c("x", "y"), crs = st_crs(pts_sf))
 }
 
-## 14) Translate and rotate points
+## 15) Translate and rotate points
 transform_points_random <- function(pts_sf, shift_dist, angle_max = pi / 6) {
   pts_trans <- translate_points_random(pts_sf, shift_dist = shift_dist)
   rotate_points_random(pts_trans, angle_max = angle_max)
 }
 
-## 15) Simulate transformed previous-year points and compute nearest-neighbour distances
+## 16) Simulate transformed previous-year points and compute nearest-neighbour distances
 simulate_transform_crossyear_nnd <- function(prev_pts, curr_pts, n_sims = 999) {
   
   # Compute the shift distance as half of the median nearest-neighbour distance within the previous image
