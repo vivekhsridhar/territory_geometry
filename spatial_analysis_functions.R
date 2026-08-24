@@ -180,23 +180,13 @@ make_kde_grid <- function(pts_sf, lek_polygon, sigma, core_prob = 0.75, dimyx = 
   
   # Compute KDE mass and normalize so the KDE values so the mass sums up to 1
   cell_area <- dens$xstep * dens$ystep
-  total_mass <- sum(kde_df$z, na.rm = TRUE) * cell_area
-  kde_df <- kde_df %>% mutate(p = z / total_mass)
-  
-  # Sort KDE grid cell densities
-  vals <- kde_df$p[is.finite(kde_df$p)]
-  vals <- sort(vals, decreasing = TRUE)
-  
-  # Find the density threshold needed to capture the chosen core probability mass
-  mass_cum <- cumsum(vals) * cell_area
-  idx <- which(mass_cum >= core_prob)[1]
-  contour_level <- vals[idx]
+  kde_df <- kde_df %>% mutate(p = z / max(z, na.rm = TRUE))
   
   # Mark grid cells as inside or outside the KDE core mask
-  kde_df <- kde_df %>% mutate(core_prob = core_prob, sigma_used = sigma, contour_level = contour_level, 
-                              in_core = is.finite(p) & (p >= contour_level))
+  kde_df <- kde_df %>% mutate(core_prob = core_prob, sigma_used = sigma, contour_level = 1-core_prob, 
+                              in_core = is.finite(p) & (p >= 1-core_prob))
   
-  list(kde_df = kde_df, contour_level = contour_level, cell_area = cell_area, xstep = dens$xstep, ystep = dens$ystep)
+  list(kde_df = kde_df, contour_level = 1-core_prob, cell_area = cell_area, xstep = dens$xstep, ystep = dens$ystep)
 }
 
 ## 7) Check which points fall inside the core region (KDE mask)

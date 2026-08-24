@@ -48,7 +48,7 @@ lek_configs <- tibble(lek_id   = c("Tal Chhapar", "Velavadar Lek 1", "Velavadar 
                       suffix   = c("TC", "LEK1", "LEK2"),
                       shp_file = c("TalChhapar_Area.shp", "Velavadar_Lek1_Area.shp", "Velavadar_Lek2_Area.shp"))
 
-plot_crossyear = FALSE
+plot_crossyear = TRUE
 
 ## Build master table of all files across all leks
 files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
@@ -82,7 +82,7 @@ kde_dimyx <- 512
 min_points_kde <- 10
 
 ## Null simulation settings
-n_sims <- 1000
+n_sims <- 10
 set.seed(123)
 
 ## MAIN
