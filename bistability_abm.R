@@ -13,13 +13,14 @@ rm(list = ls())
 # ----------------------
 
 # Set seed
-seed <- 12345
+#seed <- 98765
+seed <- as.numeric(Sys.time())
 set.seed(seed)
 
 # Parameters
 N <- 100            # Number of male blackbucks
-r <- 100             # Copying rate
-s <- 0.5             # Spontaneous switching rate
+r <- 20             # Copying rate
+s <- 0.02           # Spontaneous switching rate
 Tint <- 0.5         # Recording interval
 Tend <- 100         # Total simulation time
 iter <- ceiling(Tend / Tint)   # Number of recording intervals
@@ -92,4 +93,4 @@ df <- data.frame(time = time, site1 = xa, site2 = xb,
 write.csv(df, file = paste0("processed_data/abm_seed_", seed, ".csv"), row.names = FALSE)
 
 # Plot
-plot(time, m, type = "l", col = "cyan4", lwd = 2, xlab = "Time", ylab = "Magnetization", main = "Blackbuck Lekking Site Consensus Dynamics")
+plot(time, 1-m, type = "l", col = "cyan4", lwd = 2, xlab = "Time", ylab = "Magnetization", main = "Blackbuck Lekking Site Consensus Dynamics")
