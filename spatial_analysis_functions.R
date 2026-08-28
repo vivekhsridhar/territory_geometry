@@ -258,8 +258,8 @@ plot_crossyear_core_overlap <- function(kde_grid, lek_polygon, pts_prev, pts_cur
     geom_sf(data = pts_curr_in_core, colour = "#3FA7A3", size = 1.2) +
     coord_sf(xlim = plot_limits$xlim, ylim = plot_limits$ylim, expand = FALSE) + theme_classic(base_size = 11) +
     theme(plot.title = element_text(face = "bold"),
-          axis.text = element_text(size = 8),
-          axis.title = element_text(size = 10))
+          axis.text = element_text(size = 12),
+          axis.title = element_text(size = 12))
   
   ggsave(out_file, p, width = 5, height = 5, dpi = 300)
 }
