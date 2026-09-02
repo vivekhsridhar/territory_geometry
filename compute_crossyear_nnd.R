@@ -77,7 +77,7 @@ files_tbl <- map_dfr(seq_len(nrow(lek_configs)), function(i) {
 
 ## ANALYSIS PARAMETERS
 ## KDE settings
-core_prob <- 0.8
+core_thresh <- 0.2
 kde_dimyx <- 512
 min_points_kde <- 10
 
@@ -161,7 +161,7 @@ for (lek in names(files_by_lek)) {
     sigma_prev <- get_kde_sigma(pts_prev, lek_polygon)
       
     # Compute KDE grid from t-1
-    kde_prev <- make_kde_grid(pts_sf = pts_prev, lek_polygon = lek_polygon, sigma = sigma_prev, core_prob = core_prob, dimyx = kde_dimyx)
+    kde_prev <- make_kde_grid(pts_sf = pts_prev, lek_polygon = lek_polygon, sigma = sigma_prev, core_thresh = core_thresh, dimyx = kde_dimyx)
     
     # Keep only current-year points inside previous-year KDE core
     pts_curr_in_core <- subset_points_to_kde_core(pts_curr, kde_prev)

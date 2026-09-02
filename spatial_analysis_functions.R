@@ -187,7 +187,7 @@ clip_points_to_polygon <- function(pts_sf, polygon_sf) {
 }
 
 ## 7) Compute a KDE of the points and make a mask that defines the core region
-make_kde_grid <- function(pts_sf, lek_polygon, sigma, core_prob = 0.75, dimyx = 256) {
+make_kde_grid <- function(pts_sf, lek_polygon, sigma, core_thresh = 0.2, dimyx = 256) {
   
   # Convert the polygon to a spatstat window and extract point coordinates
   W <- as.owin(st_geometry(lek_polygon))
@@ -206,10 +206,10 @@ make_kde_grid <- function(pts_sf, lek_polygon, sigma, core_prob = 0.75, dimyx = 
   kde_df <- kde_df %>% mutate(p = z / max(z, na.rm = TRUE))
   
   # Mark grid cells as inside or outside the KDE core mask
-  kde_df <- kde_df %>% mutate(core_prob = core_prob, sigma_used = sigma, contour_level = 1-core_prob, 
-                              in_core = is.finite(p) & (p >= 1-core_prob))
+  kde_df <- kde_df %>% mutate(core_thresh = core_thresh, sigma_used = sigma, contour_level = core_thresh, 
+                              in_core = is.finite(p) & (p >= core_thresh))
   
-  list(kde_df = kde_df, contour_level = 1-core_prob, cell_area = cell_area, xstep = dens$xstep, ystep = dens$ystep)
+  list(kde_df = kde_df, contour_level = core_thresh, cell_area = cell_area, xstep = dens$xstep, ystep = dens$ystep)
 }
 
 ## 8) Check which points fall inside the core region (KDE mask)
