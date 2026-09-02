@@ -72,7 +72,7 @@ min_n <- 30
 sigma_s <- 2.5
 weight_cap_q <- 0.95
 correction <- "translate"
-min_neff <- 40
+min_neff <- 35
 
 ## MAIN
 ## Compute PCFs for all leks and all dates
