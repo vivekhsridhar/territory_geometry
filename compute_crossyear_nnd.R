@@ -179,6 +179,16 @@ for (lek in names(files_by_lek)) {
     # Compute nearest-neighbour distance from current to previous points
     obs_nnd <- nnd(pts_curr_in_core, pts_prev)
     
+    # Compute Voronoi neighbour counts for previous-year points and assign the count
+    # of the nearest previous-year point to each current-year point
+    prev_voronoi_neighbours <- compute_voronoi_neighbour_count(pts_prev)
+    if (nrow(pts_curr_in_core) > 0) {
+      prev_nearest_idx <- apply(st_distance(pts_curr_in_core, pts_prev), 1, which.min)
+      obs_prev_voronoi_neighbours <- prev_voronoi_neighbours[prev_nearest_idx]
+    } else {
+      obs_prev_voronoi_neighbours <- integer(0)
+    }
+    
     # Simulate transformed previous-year points and compute NNDs
     sim_out <- simulate_transform_crossyear_nnd(prev_pts = pts_prev, curr_pts = pts_curr_in_core, n_sims = n_sims)
     sim_tbl <- sim_out$summary
@@ -197,7 +207,7 @@ for (lek in names(files_by_lek)) {
     # Store point-level NNDs for current points within the KDE core from previous year's points
     pointwise_list[[length(pointwise_list) + 1]] <- pts_curr_in_core %>%
       mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr, point_id = seq_along(obs_nnd),
-             nnd_to_prev = obs_nnd) %>% st_drop_geometry()
+             nnd_to_prev = obs_nnd, n_voronoi_neighbours_prev = obs_prev_voronoi_neighbours) %>% st_drop_geometry()
     
     # Store simulation output for the same transition
     sim_list[[length(sim_list) + 1]] <- sim_tbl %>%

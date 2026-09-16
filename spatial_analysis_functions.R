@@ -359,3 +359,16 @@ simulate_transform_crossyear_nnd <- function(prev_pts, curr_pts, n_sims = 999) {
   
   list(summary = sim_summary, pointwise = sim_pointwise)
 }
+
+## 17) Compute number of Voronoi neighbours for each point
+compute_voronoi_neighbour_count <- function(pts_sf) {
+  xy <- st_coordinates(pts_sf)
+  
+  if (nrow(xy) < 2) return(rep(0L, nrow(xy)))
+  
+  # Voronoi neighbours are points connected by a Delaunay edge
+  del <- deldir::deldir(x = xy[, 1], y = xy[, 2])
+  edges <- del$delsgs
+  
+  tabulate(c(edges$ind1, edges$ind2), nbins = nrow(xy))
+}
