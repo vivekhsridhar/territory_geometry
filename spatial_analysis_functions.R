@@ -341,13 +341,17 @@ simulate_transform_crossyear_nnd <- function(prev_pts, curr_pts, n_sims = 999) {
   prev_nnd <- apply(prev_dmat, 1, min)
   shift_dist <- median(as.numeric(prev_nnd)) / 2
   
+  # Compute Voronoi neighbour counts for previous-year points
+  prev_voronoi_neighbours <- compute_voronoi_neighbour_count(prev_pts)
+  
   # Repeat the translate-rotate randomisation and store point-level NNDs from each simulation
   sim_pointwise <- map_dfr(seq_len(n_sims), function(s) {
     prev_transform <- transform_points_random(prev_pts, shift_dist = shift_dist, angle_max = pi / 6)
     transform_nnd <- nnd(curr_pts, prev_transform)
+    transform_nearest_idx <- apply(st_distance(curr_pts, prev_transform), 1, which.min)
     
-    tibble(sim = s, point_id = seq_along(transform_nnd),
-           nnd_to_prev = transform_nnd)
+    tibble(sim = s, point_id = seq_along(transform_nnd), nnd_to_prev = transform_nnd,
+           n_voronoi_neighbours_prev = prev_voronoi_neighbours[transform_nearest_idx])
   })
   
   # Summarise point-level NNDs from each simulation

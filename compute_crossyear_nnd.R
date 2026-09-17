@@ -235,7 +235,7 @@ simulation_tbl <- sim_tbl_all %>%
             median_crossyear_nnd_transform_rand = median_nnd_transform_rand)
 
 pointwise_randomisation_tbl <- pointwise_randomisation_tbl %>%
-  transmute(lek_id, date_prev, date_now = date_curr, sim, point_id, nnd_to_prev)
+  transmute(lek_id, date_prev, date_now = date_curr, sim, point_id, nnd_to_prev, n_voronoi_neighbours_prev)
 
 crossyear_nnd_tbl <- simulation_tbl %>%
   left_join(summary_tbl, by = c("lek_id", "date_prev", "date_now")) %>%
