@@ -12,6 +12,7 @@ These instructions apply throughout this repository. Add or edit rules here to g
 - Never overload code with checks and raising errors. This is not production level code. This is meant for anyone to follow the code and understand what is being implemented. It is research code. Always keep things simple and readable.
 - Never write trivial lines of code and comments. Obvious comments make reading code harder because they increase the number of lines.
 - Always ensure all files in the project are formatted identically, including but not limited to, commenting, amount of code in a single line, arguments for functions etc.
+- When you add new plots to the scripts, always display them, but don't automatically save them to disk. I will make that decision later myself.
 
 ## Additional instructions
 
