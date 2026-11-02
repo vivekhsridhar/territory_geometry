@@ -209,7 +209,8 @@ make_kde_grid <- function(pts_sf, lek_polygon, sigma, core_thresh = 0.2, dimyx =
   kde_df <- kde_df %>% mutate(core_thresh = core_thresh, sigma_used = sigma, contour_level = core_thresh, 
                               in_core = is.finite(p) & (p >= core_thresh))
   
-  list(kde_df = kde_df, contour_level = core_thresh, cell_area = cell_area, xstep = dens$xstep, ystep = dens$ystep)
+  list(kde_df = kde_df, contour_level = core_thresh, cell_area = cell_area, xstep = dens$xstep, ystep = dens$ystep,
+       intensity = dens)
 }
 
 ## 8) Check which points fall inside the core region (KDE mask)
@@ -375,4 +376,82 @@ compute_voronoi_neighbour_count <- function(pts_sf) {
   edges <- del$delsgs
   
   tabulate(c(edges$ind1, edges$ind2), nbins = nrow(xy))
+}
+
+## 18) Compute local spacing and neighbourhood boundary diagnostics
+compute_local_regularity <- function(lek_polygon, lek_points, nnd_reference = NULL) {
+  W <- as.owin(st_geometry(lek_polygon))
+  pts <- st_coordinates(lek_points)
+  X <- ppp(pts[,1], pts[,2], window = W)
+  nn <- nndist(X)
+
+  if (is.null(nnd_reference)) nnd_reference <- median(nn)
+
+  # Measure variation in neighbour distances
+  nn_six <- nndist(X, k = seq_len(6))
+  nn_six_cv <- apply(nn_six, 1, sd) / rowMeans(nn_six)
+  nn_six_cv[!is.finite(nn_six_cv)] <- NA_real_
+  nnd_irregularity <- abs(log(nn / nnd_reference))
+  nnd_irregularity[!is.finite(nnd_irregularity)] <- NA_real_
+
+  # Compare neighbour radii with the distance to the lek boundary
+  boundary_distance <- bdist.points(X)
+  six_neighbour_radius <- apply(nn_six, 1, max)
+
+  tibble(nnd = nn, nnd_reference = nnd_reference, nnd_irregularity = nnd_irregularity,
+         six_neighbour_cv = nn_six_cv, six_neighbour_radius = six_neighbour_radius,
+         boundary_distance = boundary_distance,
+         nnd_edge_ok = is.finite(nn) & nn <= boundary_distance,
+         six_neighbour_edge_ok = is.finite(nn_six_cv) & six_neighbour_radius <= boundary_distance)
+}
+
+## 19) Compare local spacing at the same focal territories before and after additions
+compare_addition_regularity <- function(lek_polygon, pts_after, before, focal_ids, nnd_reference) {
+  xy <- st_coordinates(pts_after)
+  after <- compute_local_regularity(lek_polygon, pts_after, nnd_reference) %>%
+    mutate(point_id = pts_after$point_id, pos_x = xy[, 1], pos_y = xy[, 2])
+
+  after %>% filter(point_id %in% focal_ids) %>%
+    left_join(before, by = 'point_id', suffix = c('_after', '_before')) %>%
+    mutate(nnd_comparable = nnd_edge_ok_before & nnd_edge_ok_after,
+           six_neighbour_comparable = six_neighbour_edge_ok_before & six_neighbour_edge_ok_after,
+           delta_nnd_irregularity = if_else(nnd_comparable, nnd_irregularity_after - nnd_irregularity_before, NA_real_),
+           delta_six_neighbour_cv = if_else(six_neighbour_comparable, six_neighbour_cv_after - six_neighbour_cv_before, NA_real_))
+}
+
+## 20) Summarise the addition effect across eligible focal territories
+summarise_addition_regularity <- function(comparison) {
+  nnd_changes <- comparison$delta_nnd_irregularity[comparison$nnd_comparable]
+  six_changes <- comparison$delta_six_neighbour_cv[comparison$six_neighbour_comparable]
+
+  tibble(n_focal = nrow(comparison), n_nnd_eligible = length(nnd_changes), n_six_eligible = length(six_changes),
+         mean_delta_nnd_irregularity = if (length(nnd_changes) > 0) mean(nnd_changes) else NA_real_,
+         median_delta_nnd_irregularity = if (length(nnd_changes) > 0) median(nnd_changes) else NA_real_,
+         mean_delta_six_neighbour_cv = if (length(six_changes) > 0) mean(six_changes) else NA_real_,
+         median_delta_six_neighbour_cv = if (length(six_changes) > 0) median(six_changes) else NA_real_)
+}
+
+## 21) Draw density-weighted new locations outside the reuse neighbourhoods
+sample_new_locations <- function(pts_prev, lek_polygon, intensity, n_required, reuse_thresh,
+                                 proposal_batch_size, max_proposals_per_point) {
+  W <- as.owin(st_geometry(lek_polygon))
+  accepted_list <- list()
+  n_accepted <- 0L
+  n_proposals <- 0L
+  max_proposals <- n_required * max_proposals_per_point
+
+  while (n_accepted < n_required && n_proposals < max_proposals) {
+    # Draw proposals within the polygon from the restricted previous KDE
+    n_draw <- min(proposal_batch_size, max_proposals - n_proposals)
+    proposed <- spatstat.random::rpoint(n_draw, f = intensity, win = W, forcewin = TRUE)
+    candidates <- st_as_sf(tibble(x = proposed$x, y = proposed$y), coords = c('x', 'y'), crs = st_crs(pts_prev))
+
+    # Retain only locations classified as newly observed by the reuse criterion
+    candidates <- candidates[nnd(candidates, pts_prev) > reuse_thresh, ]
+    accepted_list[[length(accepted_list) + 1]] <- candidates
+    n_accepted <- n_accepted + nrow(candidates)
+    n_proposals <- n_proposals + n_draw
+  }
+
+  list(points = head(bind_rows(accepted_list), n_required), n_proposals = n_proposals, n_accepted = n_accepted)
 }
