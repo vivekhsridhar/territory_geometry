@@ -13,6 +13,7 @@ These instructions apply throughout this repository. Add or edit rules here to g
 - Never write trivial lines of code and comments. Obvious comments make reading code harder because they increase the number of lines.
 - Always ensure all files in the project are formatted identically, including but not limited to, commenting, amount of code in a single line, arguments for functions etc.
 - When you add new plots to the scripts, always display them, but don't automatically save them to disk. I will make that decision later myself.
+- Always ensure there is no dead code in the repository.
 
 ## Additional instructions
 
