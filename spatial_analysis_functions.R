@@ -378,8 +378,9 @@ compute_voronoi_neighbour_count <- function(pts_sf) {
   tabulate(c(edges$ind1, edges$ind2), nbins = nrow(xy))
 }
 
-## 18) Compute six-neighbour spacing CV and boundary diagnostics
+## 18) Compute six-neighbour spacing CV
 compute_local_regularity <- function(lek_polygon, lek_points) {
+
   W <- as.owin(st_geometry(lek_polygon))
   pts <- st_coordinates(lek_points)
   X <- ppp(pts[,1], pts[,2], window = W)
@@ -387,26 +388,19 @@ compute_local_regularity <- function(lek_polygon, lek_points) {
   nn_six <- nndist(X, k = 1:6)
   six_neighbour_cv <- apply(nn_six, 1, sd) / rowMeans(nn_six)
 
-  boundary_distance <- bdist.points(X)
-  six_neighbour_radius <- nn_six[,6]
-
-  tibble(six_neighbour_cv = six_neighbour_cv,
-         boundary_distance = boundary_distance,
-         six_neighbour_edge_ok = six_neighbour_radius <= boundary_distance)
+  tibble(six_neighbour_cv = six_neighbour_cv)
 }
 
 ## 19) Draw density-weighted new locations outside the reuse neighbourhoods
 sample_new_locations <- function(pts_prev, lek_polygon, intensity, n_required, reuse_thresh,
-                                 proposal_batch_size, max_proposals_per_point) {
+                                 proposal_batch_size) {
   W <- as.owin(st_geometry(lek_polygon))
   accepted_list <- list()
   n_accepted <- 0L
-  n_proposals <- 0L
-  max_proposals <- n_required * max_proposals_per_point
 
-  while (n_accepted < n_required && n_proposals < max_proposals) {
+  while (n_accepted < n_required) {
     # Draw proposals within the polygon from the restricted previous KDE
-    n_draw <- min(proposal_batch_size, max_proposals - n_proposals)
+    n_draw <- proposal_batch_size
     proposed <- spatstat.random::rpoint(n_draw, f = intensity, win = W, forcewin = TRUE)
     candidates <- st_as_sf(tibble(x = proposed$x, y = proposed$y), coords = c('x', 'y'), crs = st_crs(pts_prev))
 
@@ -414,30 +408,24 @@ sample_new_locations <- function(pts_prev, lek_polygon, intensity, n_required, r
     candidates <- candidates[nnd(candidates, pts_prev) > reuse_thresh, ]
     accepted_list[[length(accepted_list) + 1]] <- candidates
     n_accepted <- n_accepted + nrow(candidates)
-    n_proposals <- n_proposals + n_draw
   }
 
-  list(points = head(bind_rows(accepted_list), n_required), n_proposals = n_proposals, n_accepted = n_accepted)
+  list(points = head(bind_rows(accepted_list), n_required))
 }
 
 
 ## 20) Draw one KDE-weighted null configuration with a minimum distance between
 ## new territories, and between each new territory and all fixed current territories
 sample_new_locations_spaced <- function(pts_prev, pts_fixed, lek_polygon, intensity, n_required,
-                                        reuse_thresh, min_spacing, proposal_batch_size,
-                                        max_proposals_per_point) {
+                                        reuse_thresh, min_spacing) {
   W <- as.owin(st_geometry(lek_polygon))
   chosen <- matrix(numeric(0), ncol = 2)
-  n_proposals <- 0L
-  max_proposals <- n_required * max_proposals_per_point
 
-  while (nrow(chosen) < n_required && n_proposals < max_proposals) {
-    n_draw <- min(proposal_batch_size, max_proposals - n_proposals,
-                  max(100L, 10L * (n_required - nrow(chosen))))
+  while (nrow(chosen) < n_required) {
+    n_draw <- max(100L, 10L * (n_required - nrow(chosen)))
     proposed <- spatstat.random::rpoint(n_draw, f = intensity, win = W, forcewin = TRUE)
     candidates <- st_as_sf(tibble(x = proposed$x, y = proposed$y),
                            coords = c('x', 'y'), crs = st_crs(pts_prev))
-    n_proposals <- n_proposals + n_draw
 
     # Candidate must be 'new' relative to t-1 and respect retained current territories
     candidates <- candidates[nnd(candidates, pts_prev) > reuse_thresh &
@@ -455,5 +443,5 @@ sample_new_locations_spaced <- function(pts_prev, pts_fixed, lek_polygon, intens
 
   pts_new <- st_as_sf(tibble(x = chosen[, 1], y = chosen[, 2]),
                       coords = c('x', 'y'), crs = st_crs(pts_prev))
-  list(points = pts_new, n_proposals = n_proposals)
+  list(points = pts_new)
 }

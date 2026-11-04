@@ -10,7 +10,6 @@ library(purrr)
 library(dplyr)
 library(readr)
 library(tibble)
-library(ggplot2)
 library(spatstat.geom)
 library(spatstat.explore)
 
@@ -70,10 +69,9 @@ core_thresh <- 0.2
 kde_dimyx <- 512
 
 ## Null simulation settings
-n_sims <- 1000
+n_sims <- 10
 nnd_min_quantile <- 0.10  # Minimum spacing for constrained null: 10th percentile of observed current NND
 proposal_batch_size <- 10000
-max_proposals_per_point <- 1000
 set.seed(123)
 
 ## MAIN
@@ -154,14 +152,14 @@ for (lek in names(files_by_lek)) {
 
       before <- compute_local_regularity(lek_polygon, pts_without_new) %>%
         mutate(point_id = pts_without_new$point_id) %>%
-        select(point_id, six_neighbour_cv, six_neighbour_edge_ok)
+        select(point_id, six_neighbour_cv)
 
       after <- compute_local_regularity(lek_polygon, pts_curr) %>%
         mutate(point_id = pts_curr$point_id)
 
       observed <- after %>%
         filter(point_id %in% focal_ids) %>%
-        select(point_id, six_neighbour_cv, six_neighbour_edge_ok) %>%
+        select(point_id, six_neighbour_cv) %>%
         inner_join(before, by = 'point_id', suffix = c('_after', '_before')) %>%
         mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr, n_new = n_new)
 
@@ -183,48 +181,44 @@ for (lek in names(files_by_lek)) {
         # Null 1: KDE-weighted placement without a current-year spacing constraint
         pool <- sample_new_locations(pts_prev, lek_polygon, proposal_intensity,
                                      n_new * n_sims, reuse_thresh,
-                                     proposal_batch_size, max_proposals_per_point)
+                                     proposal_batch_size)
 
         for (sim in seq_len(n_sims) - 1L) {
-          # Draw exactly n_new locations under each null; skip incomplete draws
+          # Draw exactly n_new locations under each null
           start <- sim * n_new + 1L
           end <- start + n_new - 1L
-          if (end <= nrow(pool$points)) {
-            pts_new <- pool$points[start:end, ]
-            pts_new$point_id <- new_point_ids
-            pts_sim <- rbind(pts_without_new %>% select(point_id),
-                             pts_new %>% select(point_id))
+          
+          pts_new <- pool$points[start:end, ]
+          pts_new$point_id <- new_point_ids
+          pts_sim <- rbind(pts_without_new %>% select(point_id),
+                           pts_new %>% select(point_id))
 
-            null_unconstrained_list[[length(null_unconstrained_list) + 1]] <-
-              compute_local_regularity(lek_polygon, pts_sim) %>%
-              mutate(point_id = pts_sim$point_id) %>%
-              filter(point_id %in% focal_ids) %>%
-              select(point_id, six_neighbour_cv, six_neighbour_edge_ok) %>%
-              mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr,
-                     sim = sim, n_new = n_new)
-          }
+          null_unconstrained_list[[length(null_unconstrained_list) + 1]] <-
+            compute_local_regularity(lek_polygon, pts_sim) %>%
+            mutate(point_id = pts_sim$point_id) %>%
+            filter(point_id %in% focal_ids) %>%
+            select(point_id, six_neighbour_cv) %>%
+            mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr,
+                   sim = sim, n_new = n_new)
 
           # Null 2: new locations separated from fixed current points and each other
           draw <- sample_new_locations_spaced(
             pts_prev, pts_without_new, lek_polygon, proposal_intensity,
-            n_new, reuse_thresh, min_spacing,
-            proposal_batch_size, max_proposals_per_point
+            n_new, reuse_thresh, min_spacing
           )
 
-          if (nrow(draw$points) == n_new) {
-            pts_new <- draw$points
-            pts_new$point_id <- new_point_ids
-            pts_sim <- rbind(pts_without_new %>% select(point_id),
-                             pts_new %>% select(point_id))
+          pts_new <- draw$points
+          pts_new$point_id <- new_point_ids
+          pts_sim <- rbind(pts_without_new %>% select(point_id),
+                           pts_new %>% select(point_id))
 
-            null_constrained_list[[length(null_constrained_list) + 1]] <-
-              compute_local_regularity(lek_polygon, pts_sim) %>%
-              mutate(point_id = pts_sim$point_id) %>%
-              filter(point_id %in% focal_ids) %>%
-              select(point_id, six_neighbour_cv, six_neighbour_edge_ok) %>%
-              mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr,
-                     sim = sim, n_new = n_new, min_spacing = min_spacing)
-          }
+          null_constrained_list[[length(null_constrained_list) + 1]] <-
+            compute_local_regularity(lek_polygon, pts_sim) %>%
+            mutate(point_id = pts_sim$point_id) %>%
+            filter(point_id %in% focal_ids) %>%
+            select(point_id, six_neighbour_cv) %>%
+            mutate(lek_id = lek, date_prev = date_prev, date_curr = date_curr,
+                   sim = sim, n_new = n_new, min_spacing = min_spacing)
         }
       }
     }
