@@ -69,7 +69,7 @@ core_thresh <- 0.2
 kde_dimyx <- 512
 
 ## Null simulation settings
-n_sims <- 10
+n_sims <- 1000
 nnd_min_quantile <- 0.10  # Minimum spacing for constrained null: 10th percentile of observed current NND
 proposal_batch_size <- 10000
 set.seed(123)
